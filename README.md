@@ -2,25 +2,24 @@
 
 Your AI usage, parked beside the Dock.
 
-Dockside is a small native macOS app. A floating bubble sits just to the left of the Dock and shows how much of your AI coding allowances you have used.
-
-It matches the Dock. Same height. Grows and shrinks when the Dock does. Hides and reappears when the Dock does, including in full-screen apps. It uses the empty space beside the Dock instead of the side of your screen.
+Dockside is a small native macOS app. A floating bubble sits just to the left of the bottom Dock and shows how much of your AI coding allowances you have used.
 
 ## What it does
 
-Each AI allowance gets one small vertical bar inside the bubble. The fill shows how much you have used. Hover the bubble for a plain-text summary with reset times. Right-click it to quit.
+The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. It follows your light or dark appearance, Liquid Glass, and Reduce Transparency settings, and uses the space beside the Dock.
+
+Each allowance has a name, percent, usage bar, and pace tick. The line below shows its reset time. Hover for 0.3 seconds to see pace details. Right-click to quit.
 
 Sources:
 
 - **Claude** usage comes from the numbers the Claude desktop app already saves on this Mac.
 - **Codex** and **Grok** usage come from a small JSON feed the author runs at home. This is optional. Without it, those bars stay gray.
 
-## Reading the bars
+## Reading the meters
 
-A thin white line across each bar shows how much of the time until the reset has passed. If the fill is above the line, you are on track to run out before it resets.
+A vertical tick shows how much of the time window has passed. The reset line looks like "resets 3:30pm", "resets tomorrow 3:30pm", or "resets Wed 3:30pm".
 
-- **Red bar** : 10 percent or less of the allowance is left.
-- **Gray bar** : no reading right now.
+The hover card shows the name and percent, bar and pace tick, then one line such as "14% under pace, resets 3:30pm". Unavailable readings have a gray bar, "--" for the percent, and no reset line.
 
 ## Install and build
 
@@ -34,7 +33,7 @@ bash Scripts/build.sh
 
 Then open `build/Dockside.app`.
 
-Status: early (version 0.1). Bottom Dock only for now.
+Status: early (version 0.2). Bottom Dock only for now.
 
 ## Permissions and privacy
 
