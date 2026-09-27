@@ -16,7 +16,7 @@ struct UsageReading {
     let stateIsOK: Bool
 
     func isCurrent(at now: Date = Date()) -> Bool {
-        guard stateIsOK, let used, used.isFinite, resetsAt != nil,
+        guard stateIsOK, let used, used.isFinite, let resetsAt, resetsAt > now,
               let observedAt else { return false }
         return now.timeIntervalSince(observedAt) <= 15 * 60
     }
@@ -31,14 +31,40 @@ struct UsageReading {
         return min(max(1 - resetsAt.timeIntervalSince(now) / duration, 0), 1)
     }
 
-    var tooltipLine: String {
-        guard isCurrent(), let used, let resetsAt else { return "\(label): no reading" }
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US")
-        formatter.timeStyle = .short
-        formatter.dateStyle = .none
-        let percentage = String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), used)
-        return "\(label): \(percentage)% used, resets \(formatter.string(from: resetsAt))"
+    func percentageText(at now: Date = Date()) -> String {
+        guard isCurrent(at: now), let used else { return "--" }
+        return String(format: "%.0f%%", locale: .current, used)
+    }
+
+    func resetLine(at now: Date = Date()) -> String? {
+        guard isCurrent(at: now), let resetsAt else { return nil }
+        return "resets \(Self.timeText(resetsAt, relativeTo: now))"
+    }
+
+    func verdictLine(at now: Date = Date()) -> String? {
+        guard isCurrent(at: now), let used, let pace = pace(at: now),
+              let reset = resetLine(at: now) else { return nil }
+        let delta = Int(abs((used - pace * 100).rounded()))
+        if delta == 0 { return "on pace, \(reset)" }
+        let direction = used >= pace * 100 ? "over" : "under"
+        return "\(delta)% \(direction) pace, \(reset)"
+    }
+
+    private static func timeText(_ date: Date, relativeTo now: Date) -> String {
+        let roundedDate = Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 60).rounded() * 60)
+        let time = DateFormatter()
+        time.locale = Locale(identifier: "en_US_POSIX")
+        time.dateFormat = "h:mma"
+        let timeText = time.string(from: roundedDate).lowercased()
+        let calendar = Calendar.current
+        if calendar.isDate(roundedDate, inSameDayAs: now) { return timeText }
+        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
+           calendar.isDate(roundedDate, inSameDayAs: tomorrow) { return "tomorrow \(timeText)" }
+
+        let weekday = DateFormatter()
+        weekday.locale = Locale(identifier: "en_US_POSIX")
+        weekday.dateFormat = "EEE"
+        return "\(weekday.string(from: roundedDate)) \(timeText)"
     }
 
     static func empty(_ label: String, provider: Provider, duration: TimeInterval? = nil) -> UsageReading {
@@ -56,11 +82,11 @@ final class UsagePoller {
     private var feedTask: Task<Void, Never>?
     private var claudeReadings: [UsageReading]
     private var codexReadings = [UsageReading.empty("Codex", provider: .codex)]
-    private var grokReading = UsageReading.empty("Grok week", provider: .grok, duration: 7 * 86400)
+    private var grokReading = UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
 
     private static let emptyClaude = [
-        UsageReading.empty("Claude 5 hours", provider: .claude, duration: 5 * 3600),
-        UsageReading.empty("Claude week", provider: .claude, duration: 7 * 86400)
+        UsageReading.empty("Claude 5 hr", provider: .claude, duration: 5 * 3600),
+        UsageReading.empty("Claude", provider: .claude, duration: 7 * 86400)
     ]
 
     init(onReadings: @escaping ([UsageReading]) -> Void) {
@@ -101,7 +127,7 @@ final class UsagePoller {
                 grokReading = UsageClient.grokReading(from: accounts)
             } else {
                 codexReadings = [UsageReading.empty("Codex", provider: .codex)]
-                grokReading = UsageReading.empty("Grok week", provider: .grok, duration: 7 * 86400)
+                grokReading = UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
             }
             feedTask = nil
             publish()
@@ -131,9 +157,9 @@ private enum UsageClient {
         }.value
         guard let cached = scan.reading else { return .unavailable }
         return .readings([
-            claudeReading(cached.response.fiveHour, label: "Claude 5 hours",
+            claudeReading(cached.response.fiveHour, label: "Claude 5 hr",
                           duration: 5 * 3600, observedAt: cached.savedAt),
-            claudeReading(cached.response.sevenDay, label: "Claude week",
+            claudeReading(cached.response.sevenDay, label: "Claude",
                           duration: 7 * 86400, observedAt: cached.savedAt)
         ])
     }
@@ -163,7 +189,8 @@ private enum UsageClient {
             return [UsageReading.empty("Codex", provider: .codex)]
         }
         return windows.map { window, duration in
-            UsageReading(label: "Codex \(window.label ?? "")", provider: .codex,
+            let label = window.label == "5 hours" ? "Codex 5 hr" : "Codex"
+            return UsageReading(label: label, provider: .codex,
                          duration: duration, used: window.used.map(Double.init),
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
                          stateIsOK: account.state == "ok")
@@ -173,8 +200,8 @@ private enum UsageClient {
     static func grokReading(from accounts: [FeedAccount]) -> UsageReading {
         guard let account = accounts.first(where: { $0.name == "Grok" }),
               let window = account.windows?.first(where: { $0.label == "week" })
-        else { return .empty("Grok week", provider: .grok, duration: 7 * 86400) }
-        return UsageReading(label: "Grok week", provider: .grok, duration: 7 * 86400,
+        else { return .empty("Grok", provider: .grok, duration: 7 * 86400) }
+        return UsageReading(label: "Grok", provider: .grok, duration: 7 * 86400,
                             used: window.used.map(Double.init), resetsAt: parseDate(window.resetsAt),
                             observedAt: parseDate(account.at), stateIsOK: account.state == "ok")
     }
@@ -213,9 +240,4 @@ struct FeedWindow: Decodable {
     let label: String?
     let used: Int?
     let resetsAt: String?
-
-    enum CodingKeys: String, CodingKey {
-        case label, used
-        case resetsAt = "resetsAt"
-    }
 }
