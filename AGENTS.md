@@ -7,9 +7,10 @@ does. Human intent and decisions live in the DHRvault note `70 - Projects/Docksi
 ## Decisions (Lance, 2026-09-26)
 
 - Its own app, not part of Halfwin. No menu bar icon and no Dock icon; right-click the bubble for its menu.
-- Claude usage comes only from this Mac's own Claude Code login. Codex and Grok come from the Mini's
-  usage feed at `https://crons.dhrlabs.com/api/account-usage.json`. Do not add a second reader for
-  anything that feed already covers.
+- Claude usage is this Mac's own account, read from the usage response the Claude desktop app already
+  saved in its HTTP cache (Lance, 2026-09-26: the terminal Claude Code sign-in here is expired). Codex and
+  Grok come from the Mini's usage feed at `https://crons.dhrlabs.com/api/account-usage.json`. Do not add a
+  second reader for anything that feed already covers.
 - Anchored left of the Dock. Bottom Dock first.
 - Public open-source repo under DHRlabs, MIT.
 
@@ -20,12 +21,13 @@ does. Human intent and decisions live in the DHRvault note `70 - Projects/Docksi
 - GPL projects (DockDoor, AltTab, Loop, claude-notch and similar) are read-only for learning which system
   APIs exist. Never copy, translate or closely paraphrase their code.
 
-## Credentials
+## Credentials and privacy
 
-- The Claude token is read from the login keychain item `Claude Code-credentials` at the moment of each
-  request and held in memory only. Never log it, print it, write it to disk, or send it anywhere except
-  Anthropic's usage endpoint.
-- Never refresh or rewrite the Claude token. Claude Code owns it; a stale token shows as "no reading".
+- Dockside reads no credentials: no keychain, no tokens, no cookies. Keep it that way.
+- The Claude desktop cache reader opens a cache file's body only when its key is exactly the claude.ai
+  organizations usage URL, reads that body within the sizes the file's own records give, and decodes only
+  the usage numbers. It never opens another entry's body, and it never parses, keeps or logs any bytes
+  other than the decoded usage numbers. A damaged file yields no reading.
 - No credential literals anywhere in the repo.
 
 ## Stack and build
@@ -33,7 +35,7 @@ does. Human intent and decisions live in the DHRvault note `70 - Projects/Docksi
 - Swift, AppKit, SwiftPM executable, no Xcode project. This Mac has Command Line Tools only.
 - Minimum macOS 14; use the system glass look where the SDK has it.
 - `bash Scripts/build.sh` compiles, assembles `build/Dockside.app`, and signs it with the local
-  "Apple Development" identity so the Accessibility and keychain grants survive rebuilds. It falls back to
+  "Apple Development" identity so the Accessibility grant survives rebuilds. It falls back to
   ad-hoc signing on machines without that identity.
 - No third-party dependencies without Lance's yes.
 - `build/` and `.build/` are never committed.
