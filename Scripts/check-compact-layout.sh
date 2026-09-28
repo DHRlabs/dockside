@@ -19,27 +19,73 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 struct CompactLayoutCheck {
     @MainActor
     static func main() {
-        assert(BubblePanel.fitsNaturalMeters(height: 58, available: 500, count: 4,
-                                             naturalMeterWidth: 92.8))
-        assert(!BubblePanel.fitsNaturalMeters(height: 58, available: 36, count: 4,
-                                              naturalMeterWidth: 92.8))
-        assert(BubblePanel.compactMeterLayout(available: 0, count: 4).map { $0.width } == nil)
+        let readings = [
+            UsageReading.empty("Claude 5h", provider: .claude, duration: 5 * 3600),
+            UsageReading.empty("Claude", provider: .claude, duration: 7 * 86400),
+            UsageReading.empty("Codex", provider: .codex),
+            UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
+        ]
+        let height: CGFloat = 58
+        let widths = BubblePanel.meterWidths(height: height, readings: readings)
+        let natural = BubblePanel.meterLayout(height: height, available: 600, count: 4,
+                                              naturalMeterWidth: widths.natural,
+                                              minimumMeterWidth: widths.readableMinimum)!
+        let slightlyShort = BubblePanel.meterLayout(height: height, available: natural.width - 1,
+                                                    count: 4, naturalMeterWidth: widths.natural,
+                                                    minimumMeterWidth: widths.readableMinimum)
+        assert(slightlyShort != nil)
+        assert(slightlyShort!.meterWidth < natural.meterWidth)
+        assert(slightlyShort!.meterWidth >= widths.readableMinimum)
 
-        let availableWidths: [CGFloat] = [0.25, 10, 36, 200]
+        var lower: CGFloat = 0
+        var upper = natural.width
+        for _ in 0..<20 {
+            let middle = (lower + upper) / 2
+            if BubblePanel.meterLayout(height: height, available: middle, count: 4,
+                                       naturalMeterWidth: widths.natural,
+                                       minimumMeterWidth: widths.readableMinimum) == nil {
+                lower = middle
+            } else {
+                upper = middle
+            }
+        }
+        assert(BubblePanel.meterLayout(height: height, available: lower, count: 4,
+                                       naturalMeterWidth: widths.natural,
+                                       minimumMeterWidth: widths.readableMinimum) == nil)
+        assert(BubblePanel.meterLayout(height: height, available: upper, count: 4,
+                                       naturalMeterWidth: widths.natural,
+                                       minimumMeterWidth: widths.readableMinimum) != nil)
+
+        let compact = BubblePanel.meterLayout(height: height, available: upper - 1, count: 4,
+                                              naturalMeterWidth: widths.natural,
+                                              minimumMeterWidth: widths.readableMinimum) == nil
+            ? BubblePanel.compactMeterLayout(available: upper - 1, count: 4) : nil
+        assert(compact?.width == 216)
+        assert(BubblePanel.meterLayout(height: height, available: 500, count: 4,
+                                       naturalMeterWidth: widths.natural,
+                                       minimumMeterWidth: widths.readableMinimum) != nil)
+
+        let availableWidths: [CGFloat] = [180, 200, 216, 400]
         for available in availableWidths {
             guard let layout = BubblePanel.compactMeterLayout(available: available, count: 4) else {
-                fatalError("Expected compact bars when space is available")
+                fatalError("Expected compact meters when space is available")
             }
-            assert(layout.width <= min(36, available))
+            assert(layout.width <= min(216, available))
             assert(layout.inset >= 0 && layout.gap >= 0 && layout.meterWidth > 0)
             let lastBarEnd = layout.inset + 4 * layout.meterWidth + 3 * layout.gap
             assert(lastBarEnd <= layout.width)
         }
+        assert(BubblePanel.compactMeterLayout(available: 179.9, count: 4) == nil)
+        assert(BubblePanel.compactMeterLayout(available: 0, count: 4) == nil)
+        assert(BubblePanel.compactMeterLayout(available: 160, count: 4,
+                                              minimumWidth: 160)?.width == 160)
 
         let statsView = SystemStatsView(frame: .zero)
         for height: CGFloat in [40, 58, 100] {
-            assert(statsView.width(for: height, compact: true) == 100)
+            assert(statsView.width(for: height, compact: true) == 150)
         }
+        print(String(format: "Normal at 58pt: %.1fpt natural, %.1fpt readable minimum; compact: 180-216pt",
+                     natural.width, upper))
         print("Compact layout checks passed")
     }
 }
