@@ -2,20 +2,20 @@ import AppKit
 
 @MainActor
 final class BubblePanel: NSPanel {
-    private static let dockGap: CGFloat = 8
+    static let dockGap: CGFloat = 8
     // Measured on Lance's Mac: AX list top y 1372, Dock plate top y 1377, with 44-point icons.
-    private static let dockPlateVerticalCalibration: CGFloat = 5
+    static let dockPlateVerticalCalibration: CGFloat = 5
     // Picked to match the corner curvature of the 58-point Tahoe Dock plate.
-    fileprivate static let dockPlateCornerRadius: CGFloat = 15
+    static let dockPlateCornerRadius: CGFloat = 15
     fileprivate static let meterWidthRatio: CGFloat = 1.6
     fileprivate static let meterGapRatio: CGFloat = 0.25
     fileprivate static let horizontalInsetRatio: CGFloat = 0.28
     // Lance's dark-mode Dock plate calibration: black tint over regular glass.
-    fileprivate static let tintAlpha: CGFloat = 0.55
+    static let tintAlpha: CGFloat = 0.55
     // Measured black veil compensating for NSGlassEffectView's brighter black tint.
-    fileprivate static let darkGlassVeilAlpha: CGFloat = 0.70
+    static let darkGlassVeilAlpha: CGFloat = 0.70
     // A one-point inner rim, tuned against the Dock's lighter plate edge.
-    fileprivate static let glassRimAlpha: CGFloat = 0.22
+    static let glassRimAlpha: CGFloat = 0.22
 
     fileprivate static func meterLayout(height: CGFloat, available: CGFloat, count: Int)
         -> (inset: CGFloat, gap: CGFloat, meterWidth: CGFloat, width: CGFloat)? {
@@ -36,6 +36,7 @@ final class BubblePanel: NSPanel {
     private var openTimer: Timer?
     private var accessibilityObserver: NSObjectProtocol?
     private var glassSettingsTimer: Timer?
+    var onGlassAppearanceRefresh: (() -> Void)?
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
@@ -100,10 +101,7 @@ final class BubblePanel: NSPanel {
 
     override func sendEvent(_ event: NSEvent) {
         guard event.type == .rightMouseDown, let contentView else { return super.sendEvent(event) }
-        let menu = NSMenu()
-        let quit = menu.addItem(withTitle: "Quit Dockside", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
-        quit.target = NSApp
-        NSMenu.popUpContextMenu(menu, with: event, for: contentView)
+        DocksideContextMenu.popUp(with: event, for: contentView)
     }
 
     override func mouseDown(with event: NSEvent) {}
@@ -151,6 +149,7 @@ final class BubblePanel: NSPanel {
     private func refreshGlassAppearance() {
         bubbleView.refreshGlassAppearance()
         hoverCard.refreshGlassAppearance()
+        onGlassAppearanceRefresh?()
     }
 }
 
@@ -394,7 +393,7 @@ private final class HoverCardRowsView: NSView {
 }
 
 @MainActor
-private final class GlassBackdropView: NSView {
+final class GlassBackdropView: NSView {
     private let content: NSView
     private let glassView: NSView?
     private let glassContent = NSView()

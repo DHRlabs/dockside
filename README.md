@@ -8,12 +8,16 @@ Dockside is a small native macOS app. A floating bubble sits just to the left of
 
 The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. It follows your light or dark appearance, Liquid Glass, and Reduce Transparency settings, and uses the space beside the Dock.
 
-Each allowance has a name, percent, usage bar, and pace tick. The line below shows its reset time. Hover for 0.3 seconds to see pace details. Right-click to quit.
+Each allowance has a name, percent, usage bar, and pace tick. The line below shows its reset time. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
 
 Sources:
 
 - **Claude** usage comes from the numbers the Claude desktop app already saves on this Mac.
 - **Codex** and **Grok** usage come from a small JSON feed the author runs at home. This is optional. Without it, those bars stay gray.
+
+## Button strip
+
+Dockside hosts a button strip at the right end of the Dock. Other apps can add buttons through [PROTOCOL.md](PROTOCOL.md).
 
 ## Reading the meters
 
@@ -33,7 +37,7 @@ bash Scripts/build.sh
 
 Then open `build/Dockside.app`.
 
-Status: early (version 0.2). Bottom Dock only for now.
+Status: early (version 0.3).
 
 ## Permissions and privacy
 

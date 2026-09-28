@@ -13,6 +13,9 @@ does. Human intent and decisions live in the DHRvault note `70 - Projects/Docksi
   second reader for anything that feed already covers.
 - Anchored left of the Dock. Bottom Dock first.
 - Public open-source repo under DHRlabs, MIT.
+- Dockside hosts a strip of buttons at the right end of the Dock for other DHRlabs apps (DHRvault Dockside
+  ADR-001, Lance 2026-09-27). `PROTOCOL.md` is the wire contract; change it only together with every provider
+  (Halfwin first) and bump its version when a change is not backward compatible.
 
 ## Licensing boundary
 
