@@ -14,6 +14,7 @@ final class BubblePanel: NSPanel {
     static let dockPlateCornerRadius: CGFloat = 15
     fileprivate static let meterGapRatio: CGFloat = 0.25
     fileprivate static let horizontalInsetRatio: CGFloat = 0.28
+    fileprivate static let compactWidthCap: CGFloat = 36
     // Lance's dark-mode Dock plate calibration: black tint over regular glass.
     static let tintAlpha: CGFloat = 0.55
     // Measured black veil compensating for NSGlassEffectView's brighter black tint.
@@ -83,6 +84,26 @@ final class BubblePanel: NSPanel {
         return (inset, gap, meterWidth, min(available, width))
     }
 
+    fileprivate static func compactMeterLayout(available: CGFloat, count: Int)
+        -> (inset: CGFloat, gap: CGFloat, meterWidth: CGFloat, width: CGFloat)? {
+        guard count > 0, available.isFinite, available > 0 else { return nil }
+        let width = min(compactWidthCap, available)
+        let inset = min(4, width * 0.12)
+        let innerWidth = width - 2 * inset
+        let gap = count > 1 ? min(2, innerWidth * 0.15 / CGFloat(count - 1)) : 0
+        let meterWidth = (innerWidth - gap * CGFloat(count - 1)) / CGFloat(count)
+        guard meterWidth > 0 else { return nil }
+        return (inset, gap, meterWidth, width)
+    }
+
+    fileprivate static func fitsNaturalMeters(height: CGFloat, available: CGFloat, count: Int,
+                                               naturalMeterWidth: CGFloat) -> Bool {
+        guard count > 0, available.isFinite, height.isFinite, naturalMeterWidth.isFinite else { return false }
+        let requiredWidth = 2 * height * horizontalInsetRatio + CGFloat(count) * naturalMeterWidth
+            + CGFloat(count - 1) * height * meterGapRatio
+        return available >= requiredWidth
+    }
+
     private let bubbleView = BubbleView()
     private let hoverCard = HoverCardPanel()
     private var dockFrame: CGRect?
@@ -148,14 +169,19 @@ final class BubblePanel: NSPanel {
         let height = dockFrame.height
         let available = dockFrame.minX - Self.dockGap - screen.frame.minX
         let widths = Self.meterWidths(height: height, readings: readings)
-        guard let layout = Self.meterLayout(height: height, available: available, count: count,
-                                            naturalMeterWidth: widths.natural,
-                                            minimumMeterWidth: widths.minimum) else {
+        let normalLayout = Self.fitsNaturalMeters(height: height, available: available,
+                                                  count: count, naturalMeterWidth: widths.natural)
+            ? Self.meterLayout(height: height, available: available, count: count,
+                               naturalMeterWidth: widths.natural, minimumMeterWidth: widths.minimum)
+            : nil
+        let compact = normalLayout == nil
+        guard let layout = normalLayout ?? Self.compactMeterLayout(available: available, count: count) else {
             orderOut(nil)
             hideHoverCard()
             return
         }
 
+        bubbleView.setCompact(compact)
         let frame = NSRect(x: dockFrame.minX - Self.dockGap - layout.width,
                            y: max(screen.frame.minY, dockFrame.minY - Self.dockPlateVerticalCalibration),
                            width: layout.width, height: height)
@@ -256,6 +282,11 @@ private final class BubbleView: NSView {
         meters.needsDisplay = true
     }
 
+    func setCompact(_ compact: Bool) {
+        meters.isCompact = compact
+        meters.needsDisplay = true
+    }
+
     func setTheme(_ theme: DocksideTheme) {
         meters.theme = theme
         meters.needsDisplay = true
@@ -273,9 +304,14 @@ private final class BubbleView: NSView {
 private final class UsageMetersView: NSView {
     var readings: [UsageReading] = []
     var theme: DocksideTheme = .glass
+    var isCompact = false
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
+        if isCompact {
+            drawCompactMeters()
+            return
+        }
         let height = bounds.height
         let count = readings.count
         let now = Date()
@@ -311,6 +347,60 @@ private final class UsageMetersView: NSView {
             if let reset = reading.resetLine(at: now) {
                 drawText(reset, in: NSRect(x: x, y: resetY, width: meterWidth, height: resetHeight),
                          font: resetFont, color: meterTertiaryLabelColor(isDark: isDarkAppearance))
+            }
+        }
+    }
+
+    private func drawCompactMeters() {
+        let now = Date()
+        let count = readings.count
+        guard let layout = BubblePanel.compactMeterLayout(available: bounds.width, count: count) else { return }
+        let verticalInset = min(5, bounds.height * 0.08)
+        let barHeight = max(0, bounds.height - 2 * verticalInset)
+        guard barHeight > 0 else { return }
+        let isDark = isDarkAppearance
+
+        for (index, reading) in readings.enumerated() {
+            let x = layout.inset + CGFloat(index) * (layout.meterWidth + layout.gap)
+            let bar = NSRect(x: x, y: verticalInset, width: layout.meterWidth, height: barHeight)
+            let share = reading.share(at: now) ?? 0
+            if theme == .pixel {
+                let gap = min(1, layout.meterWidth * 0.3)
+                let segmentCount = max(1, Int(bar.height / max(2, layout.meterWidth * 1.65)))
+                let segmentHeight = max(0, (bar.height - gap * CGFloat(segmentCount - 1)) / CGFloat(segmentCount))
+                for segmentIndex in 0..<segmentCount {
+                    let segment = NSRect(x: bar.minX,
+                                         y: bar.minY + CGFloat(segmentIndex) * (segmentHeight + gap),
+                                         width: bar.width, height: segmentHeight)
+                    (CGFloat(segmentIndex) < share * CGFloat(segmentCount)
+                     ? fillColor(for: reading.provider) : meterTrackColor(isDark: isDark)).setFill()
+                    segment.fill()
+                }
+            } else {
+                let track = NSBezierPath(roundedRect: bar, xRadius: bar.width / 2, yRadius: bar.width / 2)
+                meterTrackColor(isDark: isDark).setFill()
+                track.fill()
+                if share > 0 {
+                    NSGraphicsContext.saveGraphicsState()
+                    track.addClip()
+                    fillColor(for: reading.provider).setFill()
+                    NSRect(x: bar.minX, y: bar.minY, width: bar.width, height: bar.height * share).fill()
+                    NSGraphicsContext.restoreGraphicsState()
+                }
+            }
+            if let pace = reading.pace(at: now) {
+                let tickHeight = min(2, max(1, layout.meterWidth * 0.3))
+                let y = min(bar.maxY - tickHeight, max(bar.minY, bar.minY + bar.height * pace - tickHeight / 2))
+                let tick = NSRect(x: bar.minX, y: y, width: bar.width, height: tickHeight)
+                if case .grok = reading.provider {
+                    let underlayMinY = max(bar.minY, tick.minY - 0.75)
+                    let underlayMaxY = min(bar.maxY, tick.maxY + 0.75)
+                    (isDark ? NSColor.black : NSColor.white).withAlphaComponent(0.65).setFill()
+                    NSRect(x: bar.minX, y: underlayMinY, width: bar.width,
+                           height: max(0, underlayMaxY - underlayMinY)).fill()
+                }
+                (isDark ? NSColor.white : NSColor.labelColor).setFill()
+                tick.fill()
             }
         }
     }

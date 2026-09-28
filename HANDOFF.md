@@ -8,10 +8,11 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 
 - V0.1 through V0.3.1 are live, installed and tagged: `v0.1.0`, `v0.2.0`, `v0.3.0` and `v0.3.1`.
 - V0.3.2 passed Opus review and is merged, installed and tagged `v0.3.2`.
-- V0.5.0 was implemented by GPT-6 Luna, reviewed by GPT-6 Sol, signed, and installed in Applications as the only Dockside copy. It is live.
-- Root's live Glass read showed 58% CPU, 87% RAM, and 76°C average CPU temperature. The Pixel screenshot showed 36% CPU, 87% RAM, and 79°C.
-- Root clicked Show desktop once; it turned on and showed “Restore windows.” A second click turned it off and restored the windows. The Pixel preference survived app replacement and restart and remained selected.
-- The widened Show desktop tile now sits fully inside the shared glass, with an adaptive native symbol.
+- V0.5.0 was the prior live release, reviewed, signed, and installed. Glass showed 58% CPU, 87% RAM, and 76°C; Pixel showed 36% CPU, 87% RAM, and 79°C. Its saved Pixel choice survived restart.
+- V0.5.1 is live and installed as the only copy. Its combined build passed; GPT-6 Sol passed all four component checks and final integration review, including the Grok marker repair.
+- The right strip uses horizontal segmented CPU/RAM bars when space fits and compact vertical bars when it does not. The AI bubble chooses compact layout independently. Its full layout is unchanged, the compact width is capped at 36 pt, the right stats width at 100 pt, and hover details remain available.
+- The live Pixel screenshot showed 12% CPU, 86% RAM, and 61°C. Show desktop was verified off to on (“Restore windows”), then on to off with windows restored. Its button is a native icon with a wide hit area.
+- Source geometry checks passed at 40, 58, and 100 pt Dock heights. Compact transitions have not been verified live; a Dock resize check awaits Lance's permission.
 
 ## Lance's decisions to keep
 
@@ -33,6 +34,7 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 1. Run `bash Scripts/build.sh <version>`.
 2. Quit Dockside, replace `/Applications/Dockside.app` with `build/Dockside.app`, then open the installed app. Do not run a second copy.
 3. Grant Accessibility permission once. Dockside opens at login when installed in Applications.
+4. Run `bash Scripts/check-compact-layout.sh` to check source layout geometry.
 
 ## Open items and next steps
 
