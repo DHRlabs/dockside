@@ -8,7 +8,10 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 
 - V0.1 through V0.3.1 are live, installed and tagged: `v0.1.0`, `v0.2.0`, `v0.3.0` and `v0.3.1`.
 - V0.3.2 passed Opus review and is merged, installed and tagged `v0.3.2`.
-- The button strip hosts Halfwin's Show desktop button (`Halfwin` main `32d78f5`), seen live at the right end of the Dock. The end-to-end click test is still needed: press twice to hide, then restore.
+- V0.5.0 was implemented by GPT-6 Luna, reviewed by GPT-6 Sol, signed, and installed in Applications as the only Dockside copy. It is live.
+- Root's live Glass read showed 58% CPU, 87% RAM, and 76°C average CPU temperature. The Pixel screenshot showed 36% CPU, 87% RAM, and 79°C.
+- Root clicked Show desktop once; it turned on and showed “Restore windows.” A second click turned it off and restored the windows. The Pixel preference survived app replacement and restart and remained selected.
+- The widened Show desktop tile now sits fully inside the shared glass, with an adaptive native symbol.
 
 ## Lance's decisions to keep
 
@@ -28,18 +31,19 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 ## How to build and run
 
 1. Run `bash Scripts/build.sh <version>`.
-2. Copy `build/Dockside.app` to `/Applications` and open it.
+2. Quit Dockside, replace `/Applications/Dockside.app` with `build/Dockside.app`, then open the installed app. Do not run a second copy.
 3. Grant Accessibility permission once. Dockside opens at login when installed in Applications.
 
 ## Open items and next steps
 
-1. Run the Show desktop end-to-end test, pressing twice to hide and restore.
-2. Have Lance glance at light mode and Clear glass once.
-3. V0.4: settings, installer, and Lance's choice on bundling a zstd decoder. Claude decoding currently uses Homebrew's `zstd`.
-4. V0.5 ideas: CPU, GPU, memory and temperature gauges; network, disk and battery; more subscriptions (Cursor, DomoGPT credits, Gemini, Copilot, DeepSeek, OpenRouter); Lance's own feeds.
+1. Have Lance glance at light mode and Clear glass once.
+2. V0.4 remains open for settings, an installer, and Lance's choice on bundling a zstd decoder. Claude decoding currently uses Homebrew's `zstd`.
+3. GPU, network, disk, and battery stats remain future ideas.
+4. More subscriptions (Cursor, DomoGPT credits, Gemini, Copilot, DeepSeek, OpenRouter) and Lance's own feeds remain future ideas.
 
 ## Known facts
 
 - Claude numbers are only as fresh as the desktop app's saved copy. They turn gray after 15 minutes.
 - Whether the Mini's Codex is the same account as this Mac's is unknown.
+- System stats refresh every two seconds. CPU use needs a second counter sample; unavailable RAM or temperature stays `--`. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`.
 - The vault note `70 - Projects/Dockside.md` is the long-form history.
