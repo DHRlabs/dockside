@@ -22,7 +22,7 @@ ADR-001 in DHRvault.
 | `register` | provider | `protocol`, `provider`, `providerSession`, `buttonID`, `presentation`, `label`, `tooltip`, `enabled`, `toggled`; optional `symbol` | Adds or replaces a button. |
 | `update` | provider | same as `register` | Changes a button's label, tooltip, enabled or toggled state. |
 | `remove` | provider | `protocol`, `provider`, `providerSession`, `buttonID` | Removes a button. |
-| `hostAck` | Dockside | `protocol`, `hostSession`, `provider`, `buttonID`, `leaseSeconds` | Dockside is showing this button. Repeated every 3 seconds while shown; `leaseSeconds` is 10. |
+| `hostAck` | Dockside | `protocol`, `hostSession`, `provider`, `buttonID`, `leaseSeconds` | Dockside hosts this button. Repeated every 3 seconds while it hosts it, including while the Dock is hidden; `leaseSeconds` is 10. |
 | `invoke` | Dockside | `protocol`, `hostSession`, `provider`, `providerSession`, `buttonID`, `requestID` | The user clicked the button. |
 | `result` | provider | `protocol`, `provider`, `providerSession`, `buttonID`, `requestID`, `outcome`, `toggled` | What the click did. `outcome` is `ok`, `unavailable` or `error`. |
 | `goodbye` | either | `protocol` and that side's `hostSession` or `providerSession` | The sender is quitting; drop its buttons or its lease now. |
@@ -38,9 +38,10 @@ ADR-001 in DHRvault.
 
 - Ownership handoff: a provider shows its own fallback button until it receives `hostAck` for that button, hides it
   while acks keep arriving, and shows it again when no ack has arrived for `leaseSeconds` or when the host sends
-  `goodbye`.
-- Clicks: Dockside sends one `invoke` per click and never resends it. A provider handles each `requestID` at most
-  once per `providerSession`. If no `result` arrives within 2 seconds, Dockside waits for the next `update` for
-  that button instead of clicking again.
+  `goodbye`. Dockside keeps acking while the Dock is hidden (auto-hide or a full-screen app) and stops only when
+  it cannot host the button at all, so a hidden Dock never brings the fallback back.
+- Clicks: Dockside sends one `invoke` per user click and never resends one. Clicks on a button with an
+  unanswered `invoke` are ignored for up to 2 seconds; after that the next user click sends a new `invoke`. A
+  provider handles each `requestID` at most once per `providerSession` and follows each action with a `result`.
 - Restarts: a new `providerSession` replaces every button from that provider's old session. A new `hostSession`
   means providers send `register` again for each of their buttons.
