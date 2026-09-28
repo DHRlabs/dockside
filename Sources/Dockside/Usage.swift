@@ -33,12 +33,20 @@ struct UsageReading {
 
     func percentageText(at now: Date = Date()) -> String {
         guard isCurrent(at: now), let used else { return "--" }
-        return String(format: "%.0f%% used", locale: .current, used)
+        return String(format: "%.0f%%", locale: .current, used)
     }
 
     func resetLine(at now: Date = Date()) -> String? {
         guard isCurrent(at: now), let resetsAt else { return nil }
-        return "resets \(Self.timeText(resetsAt, relativeTo: now))"
+        let remaining = resetsAt.timeIntervalSince(now)
+        guard remaining > 0 else { return nil }
+        let minutes = max(1, Int(remaining / 60))
+        let days = minutes / (24 * 60)
+        let hours = minutes % (24 * 60) / 60
+        let remainder = minutes % 60
+        if days > 0 { return "\(days)d \(hours)h" }
+        if hours > 0 { return "\(hours)h \(remainder)m" }
+        return "\(remainder)m"
     }
 
     func verdictLine(at now: Date = Date()) -> String? {
@@ -47,23 +55,6 @@ struct UsageReading {
         if delta == 0 { return "on pace" }
         let direction = used >= pace * 100 ? "over" : "under"
         return "\(delta)% \(direction) pace"
-    }
-
-    private static func timeText(_ date: Date, relativeTo now: Date) -> String {
-        let roundedDate = Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 60).rounded() * 60)
-        let time = DateFormatter()
-        time.locale = Locale(identifier: "en_US_POSIX")
-        time.dateFormat = "h:mma"
-        let timeText = time.string(from: roundedDate).lowercased()
-        let calendar = Calendar.current
-        if calendar.isDate(roundedDate, inSameDayAs: now) { return timeText }
-        if let tomorrow = calendar.date(byAdding: .day, value: 1, to: now),
-           calendar.isDate(roundedDate, inSameDayAs: tomorrow) { return "tomorrow \(timeText)" }
-
-        let weekday = DateFormatter()
-        weekday.locale = Locale(identifier: "en_US_POSIX")
-        weekday.dateFormat = "EEE"
-        return "\(weekday.string(from: roundedDate)) \(timeText)"
     }
 
     static func empty(_ label: String, provider: Provider, duration: TimeInterval? = nil) -> UsageReading {
