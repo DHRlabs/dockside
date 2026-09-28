@@ -9,10 +9,12 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 - V0.1 through V0.3.1 are live, installed and tagged: `v0.1.0`, `v0.2.0`, `v0.3.0` and `v0.3.1`.
 - V0.3.2 passed Opus review and is merged, installed and tagged `v0.3.2`.
 - V0.5.0 was the prior live release, reviewed, signed, and installed. Glass showed 58% CPU, 87% RAM, and 76°C; Pixel showed 36% CPU, 87% RAM, and 79°C. Its saved Pixel choice survived restart.
-- V0.5.1 is live and installed as the only copy. Its combined build passed; GPT-6 Sol passed all four component checks and final integration review, including the Grok marker repair.
-- The right strip uses horizontal segmented CPU/RAM bars when space fits and compact vertical bars when it does not. The AI bubble chooses compact layout independently. Its full layout is unchanged, the compact width is capped at 36 pt, the right stats width at 100 pt, and hover details remain available.
-- The live Pixel screenshot showed 12% CPU, 86% RAM, and 61°C. Show desktop was verified off to on (“Restore windows”), then on to off with windows restored. Its button is a native icon with a wide hit area.
-- Source geometry checks passed at 40, 58, and 100 pt Dock heights. Compact transitions have not been verified live; a Dock resize check awaits Lance's permission.
+- V0.5.1 was the prior live version. GPT-6 Sol passed all four component checks and final integration review, including the Grok marker repair.
+- V0.5.2 is live and installed as the single copy in `/Applications`. Its signed build passed, the installed app's signature is valid, and the build/install SHA-256 values match (`09ef81a825fc5b163bc308c2bbcc511fa9967b47019a53afae42864fc3a645a7`). GPT-6 Sol passed all four final source-review checks after the 100% label fit fix.
+- CPU/RAM use labeled vertical level meters in both layouts. Glass temperature uses a compact ring; Pixel uses a thick two-row square-cell arch with the Celsius value below it. The arc uses a 0–100°C visual scale while showing the exact reading. The saved Glass theme is active.
+- Compact stats width is 150 pt; normal width remains height-based from 150 to 200 pt. The AI bubble and right stats choose compact layout independently. As left-side room narrows, the AI panel first shrinks beside the Dock, then uses four labeled segmented meters in a 180–216 pt layout. It moves above the Dock only below 180 pt; its normal drawing and hover details remain unchanged.
+- Live V0.5.2 checks showed Pixel at 11% CPU, 85% RAM, and 55°C, and Glass at 41% CPU, 86% RAM, and 77°C. Both themes showed the level meters, matching temperature style, and icon-only Show desktop button. Show desktop was verified off to on (“Restore windows”), then on to off with windows restored. No Dock settings changed.
+- Production compact renders at 58 pt Dock height covered both themes and the 100%/100°C case. The normal AI drawing was compared unchanged; compact AI renders were reviewed, but compact left-side behavior was not observed live. Geometry checks passed for right stats widths at 40, 58, and 100 pt Dock heights and the left compact threshold at 58 pt. Actual Dock-resize transitions have not been tested live.
 
 ## Lance's decisions to keep
 

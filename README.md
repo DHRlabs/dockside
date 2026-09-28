@@ -8,9 +8,9 @@ Dockside is a small native macOS app. A floating bubble sits just to the left of
 
 The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. It follows your light or dark appearance, Liquid Glass, and Reduce Transparency settings, and uses the space beside the Dock.
 
-The right strip follows the same Dock position and visibility. CPU and RAM use small horizontal segmented bars when space allows. When the Dock leaves less room on the right, they switch to compact vertical bars and return to horizontal bars when room returns. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
+The right strip follows the same Dock position and visibility. CPU and RAM use labeled vertical level meters in both layouts. Glass uses solid fills; Pixel uses chunky square cells. Glass shows average CPU temperature in a compact ring, while Pixel uses a thick square-cell arch with the Celsius value centered beneath it. The arc shows a 0–100°C visual scale; the numeric reading stays exact. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
 
-Right-click either surface and choose **Theme** to switch between **Glass** and **Pixel**. The choice is saved. Pixel uses square segmented bars, dot-matrix temperature, and square accents while keeping the same glass backdrop.
+Right-click either surface and choose **Theme** to switch between **Glass** and **Pixel**. The choice is saved. Pixel uses square-segment level meters and temperature arch, plus square accents, while keeping the same glass backdrop.
 
 Each meter shows its name and percent used above the bar, with the reset countdown below. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
 
@@ -25,7 +25,7 @@ Dockside hosts app buttons at the outer end of the right strip. Other apps can a
 
 ## Reading the meters
 
-When left space is tight, four vertical bars replace the full meter view; it returns when room opens, with hover details unchanged.
+As left-side room narrows, the panel first shrinks beside the Dock, then switches to four labeled segmented level meters in a 180–216 pt compact layout. It moves above the Dock only when side space falls below 180 pt. The full view returns when room allows; normal drawing and hover details remain unchanged.
 
 A vertical tick shows how much of the time window has passed. Reset countdowns can look like "5d 9h", "5h 12m", or "12m".
 
@@ -55,7 +55,7 @@ bash Scripts/check-compact-layout.sh
 
 For a live update, quit Dockside, replace `/Applications/Dockside.app` with the build, then open the installed app. Do not run a second copy beside it.
 
-Status: version 0.5.1 live and installed.
+Status: version 0.5.2 is signed, reviewed, and live in Applications. The installed copy matches the built artifact and its signature is valid.
 
 ## Permissions and privacy
 

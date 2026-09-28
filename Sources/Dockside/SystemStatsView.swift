@@ -9,7 +9,7 @@ final class SystemStatsView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setAccessibilityElement(true)
-        setAccessibilityLabel("System statistics")
+        setAccessibilityLabel("CPU, RAM, and average CPU temperature")
         updateAccessibilityValue()
     }
 
@@ -22,7 +22,7 @@ final class SystemStatsView: NSView {
     }
 
     func width(for height: CGFloat, compact: Bool) -> CGFloat {
-        if compact { return 100 }
+        if compact { return 150 }
         return max(150, min(200, height * 3.15))
     }
 
@@ -49,154 +49,171 @@ final class SystemStatsView: NSView {
         guard height > 0, bounds.width > 0 else { return }
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let palette = pixelPalette()
-        if compact {
-            drawCompact(height: height, dark: dark, cpu: palette.accent, ram: palette.warm)
-        } else {
-            drawExpanded(height: height, dark: dark, cpu: palette.accent, ram: palette.warm)
-        }
-    }
-
-    private func drawExpanded(height: CGFloat, dark: Bool, cpu: NSColor, ram: NSColor) {
         let inset: CGFloat = 4
-        let gap: CGFloat = 4
-        let temperatureWidth = min(50, max(42, bounds.width * 0.25))
-        let gaugeWidth = max(1, (bounds.width - inset * 2 - temperatureWidth - gap * 2) / 2)
+        let temperatureWidth = compact ? CGFloat(50) : min(60, max(48, height * 0.92))
+        let gap: CGFloat = compact ? 4 : 6
+        let meterWidth = max(1, (bounds.width - inset * 2 - temperatureWidth - gap * 2) / 2)
         let cpuX = bounds.minX + inset
-        let ramX = cpuX + gaugeWidth + gap
+        let ramX = cpuX + meterWidth + gap
         let temperatureX = bounds.maxX - inset - temperatureWidth
-        let labelFont = smallFont(max(7.5, min(8.5, height * 0.16)))
-        let labelHeight = fontHeight(labelFont)
-        let labelY = height * 0.57
-        let meterY = height * 0.43
-        drawGaugeRow("CPU", reading?.cpuPercent, x: cpuX, width: gaugeWidth, labelY: labelY,
-                     meterY: meterY, labelHeight: labelHeight, font: labelFont, accent: cpu, dark: dark)
-        drawGaugeRow("RAM", reading?.memoryPercent, x: ramX, width: gaugeWidth, labelY: labelY,
-                     meterY: meterY, labelHeight: labelHeight, font: labelFont, accent: ram, dark: dark)
-        let temperatureLabelY = labelY
-        let temperatureY: CGFloat = 3
-        let temperatureHeight = max(1, temperatureLabelY - temperatureY - 3)
-        drawLabel("AVG CPU", in: NSRect(x: temperatureX, y: temperatureLabelY,
-                                        width: temperatureWidth, height: labelHeight),
-                  font: labelFont, color: secondaryColor(dark: dark), alignment: .center)
-        drawTemperature(reading?.temperatureCelsius,
-                        in: NSRect(x: temperatureX, y: temperatureY,
-                                   width: temperatureWidth, height: temperatureHeight), dark: dark)
+
+        drawLevelMeter("CPU", value: reading?.cpuPercent, x: cpuX, width: meterWidth,
+                       height: height, accent: palette.accent, dark: dark)
+        drawLevelMeter("RAM", value: reading?.memoryPercent, x: ramX, width: meterWidth,
+                       height: height, accent: palette.warm, dark: dark)
+        drawTemperatureGauge(reading?.temperatureCelsius, x: temperatureX, width: temperatureWidth,
+                             height: height, dark: dark)
     }
 
-    private func drawGaugeRow(_ name: String, _ value: Double?, x: CGFloat, width: CGFloat,
-                              labelY: CGFloat, meterY: CGFloat, labelHeight: CGFloat,
-                              font: NSFont, accent: NSColor, dark: Bool) {
-        let reading = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
-        drawLabel("\(name) \(reading.map { "\($0)%" } ?? "--")",
-                  in: NSRect(x: x, y: labelY, width: width, height: labelHeight),
-                  font: font, color: reading == nil ? tertiaryColor(dark: dark) : secondaryColor(dark: dark))
-        drawHorizontalMeter(value, x: x, y: meterY, width: width, accent: accent, dark: dark)
-    }
-
-    private func drawHorizontalMeter(_ value: Double?, x: CGFloat, y: CGFloat, width: CGFloat,
-                                     accent: NSColor, dark: Bool) {
-        let segmentWidth: CGFloat = 2
-        let gap: CGFloat = 1
-        let count = max(1, Int((width + gap) / (segmentWidth + gap)))
-        let filled = filledCount(value, count: count)
-        let used = CGFloat(count) * segmentWidth + CGFloat(count - 1) * gap
-        let originX = x + max(0, (width - used) / 2)
-        for index in 0..<count {
-            let segment = NSRect(x: originX + CGFloat(index) * (segmentWidth + gap), y: y,
-                                 width: segmentWidth, height: 2)
-            (index < filled ? accent : trackColor(dark: dark)).setFill()
-            if theme == .pixel {
-                segment.fill()
-            } else {
-                NSBezierPath(roundedRect: segment, xRadius: 1, yRadius: 1).fill()
-            }
+    private func drawLevelMeter(_ label: String, value: Double?, x: CGFloat, width: CGFloat,
+                                height: CGFloat, accent: NSColor, dark: Bool) {
+        let barWidth: CGFloat = theme == .pixel ? 9 : 8
+        let barHeight = max(8, height - 8)
+        let bar = NSRect(x: x + 2, y: (height - barHeight) / 2, width: barWidth, height: barHeight)
+        let fraction = value.flatMap { $0.isFinite ? min(1, max(0, $0 / 100)) : nil } ?? 0
+        if theme == .pixel {
+            drawPixelMeter(value, in: bar, fraction: fraction, accent: accent, dark: dark)
+        } else {
+            drawGlassMeter(in: bar, fraction: fraction, accent: accent, dark: dark)
         }
-    }
 
-    private func drawCompact(height: CGFloat, dark: Bool, cpu: NSColor, ram: NSColor) {
-        let margin: CGFloat = 3
-        let temperatureWidth: CGFloat = 42
-        let gap: CGFloat = 4
-        let temperatureX = bounds.maxX - margin - temperatureWidth
-        let columnsEnd = temperatureX - gap
-        let columnsWidth = max(1, columnsEnd - (bounds.minX + margin))
-        let columnGap: CGFloat = 2
-        let columnWidth = max(1, (columnsWidth - columnGap) / 2)
-        let cpuX = bounds.minX + margin
-        let ramX = cpuX + columnWidth + columnGap
-        let labelFont = smallFont(max(6.5, min(7.5, height * 0.18)))
-        let valueFont = smallFont(max(6.5, min(7.5, height * 0.18)), weight: .medium)
+        let valueSize = max(8, min(compact ? 10 : 12, height * 0.22))
+        let labelSize = max(7, min(compact ? 8 : 9, height * 0.17))
+        let labelFont = meterFont(size: labelSize, weight: .medium)
         let labelHeight = fontHeight(labelFont)
+        let textX = bar.maxX + 4
+        let textWidth = max(1, x + width - textX)
+        let referenceFont = meterFont(size: valueSize, weight: .semibold)
+        let referenceWidth = ceil(("100%" as NSString).size(withAttributes: [.font: referenceFont]).width)
+        let fittedSize = valueSize * min(1, max(0, (textWidth - 1) / max(1, referenceWidth)))
+        let valueFont = meterFont(size: max(6, fittedSize), weight: .semibold)
         let valueHeight = fontHeight(valueFont)
-        let barBottom = labelHeight + 4
-        let barTop = max(barBottom + 1, height - valueHeight - 3)
-        drawVerticalGauge("CPU", reading?.cpuPercent, x: cpuX, width: columnWidth,
-                          bottom: barBottom, top: barTop, labelFont: labelFont,
-                          valueFont: valueFont, labelHeight: labelHeight, valueHeight: valueHeight,
-                          accent: cpu, dark: dark)
-        drawVerticalGauge("RAM", reading?.memoryPercent, x: ramX, width: columnWidth,
-                          bottom: barBottom, top: barTop, labelFont: labelFont,
-                          valueFont: valueFont, labelHeight: labelHeight, valueHeight: valueHeight,
-                          accent: ram, dark: dark)
-        drawLabel("AVG", in: NSRect(x: temperatureX, y: height - labelHeight - 1,
-                                     width: temperatureWidth, height: labelHeight),
-                  font: labelFont, color: secondaryColor(dark: dark), alignment: .center)
-        drawTemperature(reading?.temperatureCelsius,
-                        in: NSRect(x: temperatureX, y: height * 0.22,
-                                   width: temperatureWidth, height: height * 0.48), dark: dark)
+        let valueY = height / 2 - valueHeight - 1
+        let labelY = height / 2 + 1
+        let number = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
+        drawLabel(label, in: NSRect(x: textX, y: labelY, width: textWidth, height: labelHeight),
+                  font: labelFont, color: secondaryColor(dark: dark))
+        drawLabel(number.map { "\($0)%" } ?? "--%",
+                  in: NSRect(x: textX, y: valueY, width: textWidth, height: valueHeight),
+                  font: valueFont, color: number == nil ? tertiaryColor(dark: dark) : accent)
     }
 
-    private func drawVerticalGauge(_ name: String, _ value: Double?, x: CGFloat, width: CGFloat,
-                                   bottom: CGFloat, top: CGFloat, labelFont: NSFont, valueFont: NSFont,
-                                   labelHeight: CGFloat, valueHeight: CGFloat, accent: NSColor, dark: Bool) {
-        let reading = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
-        drawLabel(name, in: NSRect(x: x, y: 1, width: width, height: labelHeight),
-                  font: labelFont, color: secondaryColor(dark: dark), alignment: .center)
-        drawLabel(reading.map { "\($0)%" } ?? "--",
-                  in: NSRect(x: x, y: bounds.height - valueHeight - 1, width: width, height: valueHeight),
-                  font: valueFont, color: reading == nil ? tertiaryColor(dark: dark) : secondaryColor(dark: dark),
-                  alignment: .center)
-        let barWidth: CGFloat = 2.5
-        let barHeight = max(1, top - bottom)
-        let barX = x + (width - barWidth) / 2
-        let count = max(1, Int(ceil(barHeight / 3)))
-        let filled = filledCount(value, count: count)
+    private func drawGlassMeter(in rect: NSRect, fraction: Double, accent: NSColor, dark: Bool) {
+        trackColor(dark: dark).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.width / 2).fill()
+        guard fraction > 0 else { return }
+        let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width,
+                          height: rect.height * CGFloat(fraction))
+        accent.setFill()
+        NSBezierPath(roundedRect: fill, xRadius: rect.width / 2, yRadius: rect.width / 2).fill()
+    }
+
+    private func drawPixelMeter(_ value: Double?, in rect: NSRect, fraction: Double,
+                                accent: NSColor, dark: Bool) {
+        let gap: CGFloat = 1
+        let count = max(1, Int(ceil(rect.height / 5.5)))
+        let segmentHeight = min(4.5, (rect.height - CGFloat(count - 1) * gap) / CGFloat(count))
+        let filled = value.flatMap { $0.isFinite ? Int((fraction * Double(count)).rounded(.down)) : nil } ?? 0
         for index in 0..<count {
-            let segment = NSRect(x: barX, y: bottom + CGFloat(index) * 3,
-                                 width: barWidth, height: min(2, max(0, top - (bottom + CGFloat(index) * 3))))
+            let segment = NSRect(x: rect.minX, y: rect.minY + CGFloat(index) * (segmentHeight + gap),
+                                 width: rect.width, height: segmentHeight)
             (index < filled ? accent : trackColor(dark: dark)).setFill()
-            if theme == .pixel {
-                segment.fill()
-            } else {
-                NSBezierPath(roundedRect: segment, xRadius: 1, yRadius: 1).fill()
+            segment.fill()
+        }
+    }
+
+    private func drawTemperatureGauge(_ value: Double?, x: CGFloat, width: CGFloat,
+                                     height: CGFloat, dark: Bool) {
+        let diameter = min(width - 2, min(height - 4, compact ? 38 : 56))
+        guard diameter > 16 else { return }
+        let center = NSPoint(x: x + width / 2, y: height / 2)
+        let thickness: CGFloat = theme == .pixel ? 5 : 4.5
+        let radius = diameter / 2 - thickness / 2 - 0.5
+        let fraction = value.flatMap { $0.isFinite ? min(1, max(0, $0 / 100)) : nil } ?? 0
+        let color = primaryColor(dark: dark)
+        if theme == .pixel {
+            let archRadius = min(diameter * 0.36, height * 0.34)
+            let baseline = NSPoint(x: center.x, y: height / 2 + 1)
+            drawPixelArch(baseline: baseline, radius: archRadius, side: max(3.2, min(4.5, diameter * 0.12)),
+                          fraction: fraction, color: color, dark: dark)
+            let readoutCenter = baseline.y - archRadius * 0.8
+            drawPixelTemperature(value.flatMap { $0.isFinite ? Int($0.rounded()) : nil },
+                                 in: NSRect(x: x, y: readoutCenter - 7,
+                                            width: width, height: 14), dark: dark)
+        } else {
+            let ring = NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius,
+                                                  width: radius * 2, height: radius * 2))
+            ring.lineWidth = thickness
+            trackColor(dark: dark).setStroke()
+            ring.stroke()
+            if fraction > 0 {
+                let arc = NSBezierPath()
+                arc.move(to: NSPoint(x: center.x, y: center.y + radius))
+                arc.appendArc(withCenter: center, radius: radius, startAngle: 90,
+                              endAngle: 90 - CGFloat(360 * fraction), clockwise: true)
+                arc.lineWidth = thickness
+                arc.lineCapStyle = .round
+                color.setStroke()
+                arc.stroke()
+            }
+            let innerDiameter = max(1, 2 * (radius - thickness / 2))
+            let inner = NSRect(x: center.x - innerDiameter / 2, y: center.y - innerDiameter / 2,
+                               width: innerDiameter, height: innerDiameter)
+            drawTemperatureValue(value, in: inner, dark: dark)
+        }
+    }
+
+    private func drawPixelArch(baseline: NSPoint, radius: CGFloat, side: CGFloat,
+                               fraction: Double, color: NSColor, dark: Bool) {
+        let gap: CGFloat = 0.7
+        let count = max(8, Int(ceil(Double.pi * Double(radius) / Double(side + gap))))
+        let filled = Int((fraction * Double(count)).rounded(.down))
+        for index in 0..<count {
+            let angle = Double.pi - Double.pi * Double(index) / Double(count - 1)
+            for row in 0..<2 {
+                let rowRadius = radius - CGFloat(row) * (side + gap)
+                let point = NSPoint(x: baseline.x + CGFloat(cos(angle)) * rowRadius,
+                                    y: baseline.y + CGFloat(sin(angle)) * rowRadius)
+                let block = NSRect(x: point.x - side / 2, y: point.y - side / 2,
+                                   width: side, height: side)
+                (index < filled ? color : trackColor(dark: dark)).setFill()
+                block.fill()
             }
         }
     }
 
-    private func filledCount(_ value: Double?, count: Int) -> Int {
-        guard let value, value.isFinite else { return 0 }
-        return Int((min(100, max(0, value)) / 100 * Double(count)).rounded(.down))
-    }
-
-    private func smallFont(_ size: CGFloat, weight: NSFont.Weight = .regular) -> NSFont {
-        if theme == .pixel, let pixel = NSFont(name: "Menlo", size: size) { return pixel }
-        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
-    }
-
-    private func drawTemperature(_ value: Double?, in rect: NSRect, dark: Bool) {
+    private func drawTemperatureValue(_ value: Double?, in rect: NSRect, dark: Bool) {
         let degrees = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
+        if theme == .pixel {
+            drawPixelTemperature(degrees, in: rect, dark: dark)
+            return
+        }
+        let text = degrees.map { "\($0)°C" } ?? "--°C"
+        let baseSize = max(7, min(11, rect.height * 0.38))
+        let baseFont = NSFont.monospacedDigitSystemFont(ofSize: baseSize, weight: .semibold)
+        let measuredWidth = ceil((text as NSString).size(withAttributes: [.font: baseFont]).width)
+        let size = baseSize * min(1, rect.width / max(1, measuredWidth))
+        let font = NSFont.monospacedDigitSystemFont(ofSize: max(6, size), weight: .semibold)
+        let color = degrees == nil ? tertiaryColor(dark: dark) : primaryColor(dark: dark)
+        let lineHeight = fontHeight(font)
+        drawLabel(text, in: NSRect(x: rect.minX, y: rect.midY - lineHeight / 2,
+                                   width: rect.width, height: lineHeight),
+                  font: font, color: color, alignment: .center)
+    }
+
+    private func drawPixelTemperature(_ degrees: Int?, in rect: NSRect, dark: Bool) {
         let digits = degrees.map { String($0) } ?? "--"
-        let suffixFont = NSFont.monospacedDigitSystemFont(ofSize: max(6.5, min(8.5, rect.height * 0.18)), weight: .medium)
+        let suffixFont = NSFont.monospacedDigitSystemFont(ofSize: max(5, min(6.5, rect.height * 0.28)), weight: .medium)
         let suffix = "°C"
         let suffixWidth = ceil((suffix as NSString).size(withAttributes: [.font: suffixFont]).width)
-        let glyphGapRatio: CGFloat = 0.8
-        let dotUnits = CGFloat(digits.count) * 6.4 + CGFloat(max(0, digits.count - 1)) * glyphGapRatio
-        let dot = max(0.7, min(1.8, (rect.width - suffixWidth - 3) / dotUnits))
+        let gapRatio: CGFloat = 0.8
+        let dotUnits = CGFloat(digits.count) * 6.4 + CGFloat(max(0, digits.count - 1)) * gapRatio
+        let dot = max(0.45, min(1.25, (rect.width - suffixWidth - 2) / dotUnits))
         let spacing = dot * 0.35
-        let glyphWidth = dot * 5 + spacing * 4
-        let glyphGap = dot * glyphGapRatio
-        let totalWidth = CGFloat(digits.count) * glyphWidth + CGFloat(max(0, digits.count - 1)) * glyphGap + 3 + suffixWidth
-        var x = rect.midX - totalWidth / 2
+        let glyphWidth = dot * 6.4
+        let glyphGap = dot * gapRatio
+        let textWidth = CGFloat(digits.count) * glyphWidth + CGFloat(max(0, digits.count - 1)) * glyphGap + suffixWidth + 2
+        var x = rect.midX - textWidth / 2
         let gridHeight = dot * 7 + spacing * 6
         let y = rect.midY - gridHeight / 2
         let color = degrees == nil ? tertiaryColor(dark: dark) : primaryColor(dark: dark)
@@ -206,19 +223,20 @@ final class SystemStatsView: NSView {
                     let pixel = NSRect(x: x + CGFloat(column) * (dot + spacing),
                                        y: y + CGFloat(6 - row) * (dot + spacing), width: dot, height: dot)
                     color.setFill()
-                    if theme == .pixel {
-                        pixel.fill()
-                    } else {
-                        NSBezierPath(ovalIn: pixel).fill()
-                    }
+                    pixel.fill()
                 }
             }
             x += glyphWidth
             if index < digits.count - 1 { x += glyphGap }
         }
         drawLabel(suffix, in: NSRect(x: x + 1, y: rect.midY - fontHeight(suffixFont) / 2,
-                                      width: suffixWidth + 1, height: fontHeight(suffixFont)),
+                                      width: suffixWidth, height: fontHeight(suffixFont)),
                   font: suffixFont, color: color)
+    }
+
+    private func meterFont(size: CGFloat, weight: NSFont.Weight) -> NSFont {
+        if theme == .pixel, let pixel = NSFont(name: "Menlo-Bold", size: size) { return pixel }
+        return NSFont.monospacedDigitSystemFont(ofSize: size, weight: weight)
     }
 
     private func drawLabel(_ text: String, in rect: NSRect, font: NSFont, color: NSColor,
