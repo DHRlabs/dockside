@@ -1,5 +1,10 @@
 import AppKit
 
+enum DocksideTheme: String {
+    case glass
+    case pixel
+}
+
 @MainActor
 final class BubblePanel: NSPanel {
     static let dockGap: CGFloat = 8
@@ -82,6 +87,7 @@ final class BubblePanel: NSPanel {
     private let hoverCard = HoverCardPanel()
     private var dockFrame: CGRect?
     private var readings: [UsageReading] = []
+    private var theme: DocksideTheme = .glass
     private var openTimer: Timer?
     private var accessibilityObserver: NSObjectProtocol?
     private var glassSettingsTimer: Timer?
@@ -119,8 +125,15 @@ final class BubblePanel: NSPanel {
     func update(_ readings: [UsageReading]) {
         self.readings = readings
         bubbleView.update(readings)
-        hoverCard.update(readings)
+        hoverCard.update(readings, theme: theme)
         if let dockFrame { place(leftOf: dockFrame) }
+    }
+
+    func setTheme(_ theme: DocksideTheme) {
+        guard self.theme != theme else { return }
+        self.theme = theme
+        bubbleView.setTheme(theme)
+        hoverCard.update(readings, theme: theme)
     }
 
     func place(leftOf dockFrame: CGRect?) {
@@ -243,6 +256,11 @@ private final class BubbleView: NSView {
         meters.needsDisplay = true
     }
 
+    func setTheme(_ theme: DocksideTheme) {
+        meters.theme = theme
+        meters.needsDisplay = true
+    }
+
     func refreshGlassAppearance() { backdrop.refreshAppearance() }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -254,6 +272,7 @@ private final class BubbleView: NSView {
 @MainActor
 private final class UsageMetersView: NSView {
     var readings: [UsageReading] = []
+    var theme: DocksideTheme = .glass
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -288,7 +307,7 @@ private final class UsageMetersView: NSView {
                                fonts: fonts, showReset: false,
                                isDark: isDarkAppearance)
             drawMeter(reading, in: NSRect(x: x, y: barY, width: meterWidth, height: barHeight),
-                      at: now, dockHeight: height, isDark: isDarkAppearance)
+                      at: now, dockHeight: height, isDark: isDarkAppearance, theme: theme)
             if let reset = reading.resetLine(at: now) {
                 drawText(reset, in: NSRect(x: x, y: resetY, width: meterWidth, height: resetHeight),
                          font: resetFont, color: meterTertiaryLabelColor(isDark: isDarkAppearance))
@@ -334,7 +353,7 @@ private final class HoverCardPanel: NSPanel {
                       height: 24 + Self.rowHeight * CGFloat(max(1, readings.count)))
     }
 
-    func update(_ readings: [UsageReading]) { cardView.update(readings) }
+    func update(_ readings: [UsageReading], theme: DocksideTheme) { cardView.update(readings, theme: theme) }
     func refreshGlassAppearance() { cardView.refreshGlassAppearance() }
 
     func show() {
@@ -367,8 +386,9 @@ private final class HoverCardView: NSView {
         backdrop.frame = bounds
     }
 
-    func update(_ readings: [UsageReading]) {
+    func update(_ readings: [UsageReading], theme: DocksideTheme) {
         rows.readings = readings
+        rows.theme = theme
         rows.needsDisplay = true
     }
 
@@ -383,6 +403,7 @@ private final class HoverCardView: NSView {
 @MainActor
 private final class HoverCardRowsView: NSView {
     var readings: [UsageReading] = []
+    var theme: DocksideTheme = .glass
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -405,7 +426,7 @@ private final class HoverCardRowsView: NSView {
             drawMeter(reading,
                       in: NSRect(x: padding, y: lineY - barGap - barHeight,
                                  width: bounds.width - padding * 2, height: barHeight),
-                      at: now, dockHeight: 58, isDark: isDark)
+                      at: now, dockHeight: 58, isDark: isDark, theme: theme)
             if let verdict = reading.verdictLine(at: now) {
                 drawText(verdict,
                          in: NSRect(x: padding, y: top - rowHeight + 3,
@@ -612,20 +633,33 @@ private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: 
 
 @MainActor
 private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
-                       dockHeight: CGFloat, isDark: Bool) {
+                       dockHeight: CGFloat, isDark: Bool, theme: DocksideTheme = .glass) {
     guard rect.width > 0, rect.height > 0 else { return }
-    let track = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
-    meterTrackColor(isDark: isDark).setFill()
-    track.fill()
-    guard let share = reading.share(at: now) else { return }
-
-    if share > 0 {
-        let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * share, height: rect.height)
-        NSGraphicsContext.saveGraphicsState()
-        track.addClip()
-        fillColor(for: reading.provider).setFill()
-        fill.fill()
-        NSGraphicsContext.restoreGraphicsState()
+    let share = reading.share(at: now)
+    if theme == .pixel {
+        let gap = max(0.7, rect.height * 0.24)
+        let count = max(1, Int(rect.width / (rect.height * 1.65)))
+        let segmentWidth = max(0, (rect.width - gap * CGFloat(count - 1)) / CGFloat(count))
+        let filledSegments: CGFloat = CGFloat(min(1, max(0, share ?? 0))) * CGFloat(count)
+        for index in 0..<count {
+            let segment = NSRect(x: rect.minX + CGFloat(index) * (segmentWidth + gap), y: rect.minY,
+                                 width: segmentWidth, height: rect.height)
+            (CGFloat(index) < filledSegments
+             ? fillColor(for: reading.provider) : meterTrackColor(isDark: isDark)).setFill()
+            segment.fill()
+        }
+    } else {
+        let track = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
+        meterTrackColor(isDark: isDark).setFill()
+        track.fill()
+        if let share, share > 0 {
+            let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * share, height: rect.height)
+            NSGraphicsContext.saveGraphicsState()
+            track.addClip()
+            fillColor(for: reading.provider).setFill()
+            fill.fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
     }
     if let pace = reading.pace(at: now) {
         let tickWidth = max(1.5, dockHeight * 2 / 58)

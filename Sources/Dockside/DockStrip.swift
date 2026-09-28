@@ -336,11 +336,20 @@ final class DockStripPanel: NSPanel {
 
     func update(_ buttons: [DockButton]) {
         stripView.update(buttons)
-        guard stripView.hasButtons else {
+        guard stripView.hasContent else {
             hideStrip()
             return
         }
         if let location { place(at: location) }
+    }
+
+    func updateStats(_ reading: SystemStatsReading) {
+        stripView.updateStats(reading)
+        if let location { place(at: location) }
+    }
+
+    func setTheme(_ theme: DocksideTheme) {
+        stripView.setTheme(theme)
     }
 
     func place(at location: DockLocation?) {
@@ -351,9 +360,15 @@ final class DockStripPanel: NSPanel {
             return
         }
         self.location = location
-        guard stripView.hasButtons else { return }
         if stripView.hasPressedButton {
             pendingLocation = location
+            return
+        }
+        let side = location.orientation != .bottom
+        stripView.setItemHeight(side ? location.frame.width : location.frame.height,
+                                orientation: location.orientation)
+        guard stripView.hasContent else {
+            hideStrip()
             return
         }
         apply(location)
@@ -377,6 +392,7 @@ final class DockStripPanel: NSPanel {
     private func apply(_ location: DockLocation) {
         let side = location.orientation != .bottom
         let height = side ? location.frame.width : location.frame.height
+        stripView.setItemHeight(height, orientation: location.orientation)
         let totalWidth = stripView.width(for: height)
         guard height > 0, totalWidth > 0 else {
             hideStrip()
@@ -405,7 +421,6 @@ final class DockStripPanel: NSPanel {
             frame = CGRect(x: location.frame.maxX - totalWidth, y: y, width: totalWidth, height: height)
         }
         if self.frame != frame { setFrame(frame, display: true) }
-        stripView.setItemHeight(height, orientation: location.orientation)
         if !isVisible { orderFrontRegardless() }
     }
 
@@ -432,23 +447,26 @@ final class DockStripPanel: NSPanel {
 private final class DockStripView: NSView {
     private let ordinaryContent: NSView
     private let backdrop: GlassBackdropView
+    private let statsView = SystemStatsView()
     private var itemViews: [String: DockStripButton] = [:]
     private var buttons: [DockButton] = []
     private var pressedKeys: Set<String> = []
     private var itemHeight: CGFloat = 0
     private var orientation: DockOrientation = .bottom
+    private var theme: DocksideTheme = .glass
     var onInvoke: ((String) -> Void)?
     var onHoverChanged: ((Bool) -> Void)?
     var onPressStateChanged: ((Bool) -> Void)?
 
     var hasPressedButton: Bool { !pressedKeys.isEmpty }
-    var hasButtons: Bool { !buttons.isEmpty }
+    var hasContent: Bool { !buttons.isEmpty || (orientation == .bottom && itemHeight > 0) }
 
     override init(frame frameRect: NSRect) {
         ordinaryContent = NSView()
         backdrop = GlassBackdropView(contentView: ordinaryContent,
                                      cornerRadius: BubblePanel.dockPlateCornerRadius)
         super.init(frame: frameRect)
+        ordinaryContent.addSubview(statsView)
         addSubview(backdrop)
         addTrackingArea(NSTrackingArea(rect: bounds,
                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
@@ -462,18 +480,21 @@ private final class DockStripView: NSView {
         let ordinary = buttons.filter { $0.presentation == .button }
         let desktop = buttons.filter { $0.presentation == .desktopStrip }
         let desktopFirst = orientation == .left
-        let visibleWidth = CGFloat(ordinary.count) * itemHeight + CGFloat(max(0, desktop.count - 1)) * 20 +
-            (desktop.isEmpty ? 0 : 7)
-        backdrop.frame = NSRect(x: desktopFirst ? CGFloat(desktop.count) * 20 - 7 : 0,
-                                y: 0, width: visibleWidth, height: bounds.height)
+        let ordinaryWidth = CGFloat(ordinary.count) * itemHeight
+        let statsWidth = orientation == .bottom ? statsView.width(for: itemHeight) : 0
+        let desktopWidth = Self.desktopButtonWidth(for: itemHeight)
+        let contentStart = desktopFirst ? CGFloat(desktop.count) * desktopWidth : 0
+        backdrop.frame = bounds
         for (index, model) in ordinary.enumerated() {
-            itemViews[model.key]?.frame = NSRect(x: CGFloat(index) * itemHeight, y: 0,
+            itemViews[model.key]?.frame = NSRect(x: contentStart + CGFloat(index) * itemHeight, y: 0,
                                                   width: itemHeight, height: bounds.height)
         }
-        let start = desktopFirst ? 0 : CGFloat(ordinary.count) * itemHeight
+        statsView.frame = NSRect(x: contentStart + ordinaryWidth, y: 0,
+                                 width: statsWidth, height: bounds.height)
+        let start = desktopFirst ? 0 : ordinaryWidth + statsWidth
         for (index, model) in desktop.enumerated() {
-            itemViews[model.key]?.frame = NSRect(x: start + CGFloat(index) * 20, y: 0,
-                                                  width: 20, height: bounds.height)
+            itemViews[model.key]?.frame = NSRect(x: start + CGFloat(index) * desktopWidth, y: 0,
+                                                  width: desktopWidth, height: bounds.height)
         }
     }
 
@@ -488,7 +509,7 @@ private final class DockStripView: NSView {
         }
         for model in self.buttons {
             let item = itemViews[model.key] ?? makeButton(for: model)
-            item.update(model, itemHeight: itemHeight, mirrorDesktopStrip: orientation == .left)
+            item.update(model, itemHeight: itemHeight, theme: theme)
             let parent = model.presentation == .button ? ordinaryContent : self
             if item.superview !== parent {
                 item.removeFromSuperview()
@@ -500,21 +521,40 @@ private final class DockStripView: NSView {
         layoutSubtreeIfNeeded()
     }
 
+    func updateStats(_ reading: SystemStatsReading) {
+        statsView.update(reading)
+        needsLayout = true
+        layoutSubtreeIfNeeded()
+    }
+
+    func setTheme(_ theme: DocksideTheme) {
+        guard self.theme != theme else { return }
+        self.theme = theme
+        statsView.setTheme(theme)
+        for model in buttons {
+            itemViews[model.key]?.update(model, itemHeight: itemHeight,
+                                         theme: theme)
+        }
+        needsDisplay = true
+    }
+
     func setItemHeight(_ height: CGFloat, orientation: DockOrientation) {
         guard itemHeight != height || self.orientation != orientation else { return }
         itemHeight = height
         self.orientation = orientation
         buttons = sorted(buttons)
         for model in buttons {
-            itemViews[model.key]?.update(model, itemHeight: height, mirrorDesktopStrip: orientation == .left)
+            itemViews[model.key]?.update(model, itemHeight: height, theme: theme)
         }
         needsLayout = true
         layoutSubtreeIfNeeded()
     }
 
     func width(for height: CGFloat) -> CGFloat {
-        CGFloat(buttons.filter { $0.presentation == .button }.count) * height +
-            CGFloat(buttons.filter { $0.presentation == .desktopStrip }.count) * 20
+        let ordinaryCount = buttons.filter { $0.presentation == .button }.count
+        let desktopCount = buttons.filter { $0.presentation == .desktopStrip }.count
+        let statsWidth = orientation == .bottom ? statsView.width(for: height) : 0
+        return CGFloat(ordinaryCount) * height + statsWidth + CGFloat(desktopCount) * Self.desktopButtonWidth(for: height)
     }
 
     func refreshGlassAppearance() { backdrop.refreshAppearance() }
@@ -543,13 +583,17 @@ private final class DockStripView: NSView {
         }
         return button
     }
+
+    private static func desktopButtonWidth(for height: CGFloat) -> CGFloat {
+        max(28, min(32, height * 0.52))
+    }
 }
 
 @MainActor
 private final class DockStripButton: NSButton {
     private var model: DockButton?
     private var hovered = false
-    private var mirrorDesktopStrip = false
+    private var theme: DocksideTheme = .glass
     var onInvoke: ((String) -> Void)?
     var onPressStateChanged: ((String, Bool) -> Void)?
 
@@ -569,9 +613,9 @@ private final class DockStripButton: NSButton {
 
     required init?(coder: NSCoder) { nil }
 
-    func update(_ model: DockButton, itemHeight: CGFloat, mirrorDesktopStrip: Bool) {
+    func update(_ model: DockButton, itemHeight: CGFloat, theme: DocksideTheme) {
         self.model = model
-        self.mirrorDesktopStrip = mirrorDesktopStrip
+        self.theme = theme
         isEnabled = model.enabled
         toolTip = model.tooltip.isEmpty ? nil : model.tooltip
         setAccessibilityLabel(model.label)
@@ -582,8 +626,11 @@ private final class DockStripButton: NSButton {
             image = symbol?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size, weight: .regular))
             contentTintColor = isEnabled ? .labelColor : .secondaryLabelColor
         } else {
-            image = nil
-            contentTintColor = nil
+            let symbol = NSImage(systemSymbolName: model.symbol ?? "rectangle.on.rectangle",
+                                 accessibilityDescription: model.label)
+            let size = max(12, min(17, itemHeight * 0.3))
+            image = symbol?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: size, weight: .medium))
+            contentTintColor = isEnabled ? .labelColor : .secondaryLabelColor
         }
         needsDisplay = true
     }
@@ -601,31 +648,35 @@ private final class DockStripButton: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         guard let model else { return }
         let desktop = model.presentation == .desktopStrip
-        let rect = desktop
-            ? NSRect(x: mirrorDesktopStrip ? bounds.width - 7 : 1.5, y: 2,
-                     width: 5.5, height: max(0, bounds.height - 4))
-            : bounds.insetBy(dx: 5, dy: 5)
         let highlighted = model.toggled || (hovered && model.enabled)
+        if desktop {
+            drawDesktopTile(model, highlighted: highlighted)
+            super.draw(dirtyRect)
+            return
+        }
+        let rect = bounds.insetBy(dx: 5, dy: 5)
         if highlighted {
             let alpha: CGFloat = model.toggled ? (hovered && model.enabled ? 0.30 : 0.18) : 0.16
             NSColor.controlAccentColor.withAlphaComponent(alpha).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: desktop ? 3 : 11, yRadius: desktop ? 3 : 11).fill()
+            NSBezierPath(roundedRect: rect, xRadius: 11, yRadius: 11).fill()
         }
-        if desktop {
-            NSColor.separatorColor.withAlphaComponent(0.65).setStroke()
-            let separator = NSBezierPath()
-            separator.lineWidth = 0.5
-            let x = mirrorDesktopStrip ? bounds.width - 0.75 : 0.75
-            separator.move(to: NSPoint(x: x, y: 5))
-            separator.line(to: NSPoint(x: x, y: bounds.height - 5))
-            separator.stroke()
-        } else {
-            super.draw(dirtyRect)
-        }
-        if !isEnabled, desktop {
-            NSColor.secondaryLabelColor.withAlphaComponent(0.5).setFill()
-            NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3).fill()
-        }
+        super.draw(dirtyRect)
+    }
+
+    private func drawDesktopTile(_ model: DockButton, highlighted: Bool) {
+        let pixel = theme == .pixel
+        let insetY = max(5, bounds.height * 0.12)
+        let rect = bounds.insetBy(dx: 2.5, dy: insetY)
+        let path = pixel ? NSBezierPath(rect: rect)
+                         : NSBezierPath(roundedRect: rect, xRadius: 7, yRadius: 7)
+        let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let base = (dark ? NSColor.white : NSColor.black).withAlphaComponent(pixel ? 0.12 : 0.07)
+        base.setFill()
+        path.fill()
+        (highlighted ? NSColor.controlAccentColor.withAlphaComponent(model.enabled ? 0.25 : 0.12)
+                     : NSColor.separatorColor.withAlphaComponent(pixel ? 0.75 : 0.55)).setStroke()
+        path.lineWidth = pixel ? 1.5 : 1
+        path.stroke()
     }
 
     @objc private func activate() {
@@ -638,10 +689,23 @@ private final class DockStripButton: NSButton {
 enum DocksideContextMenu {
     static func popUp(with event: NSEvent, for view: NSView) {
         let menu = NSMenu()
+        let delegate = NSApp.delegate as? AppDelegate
         let login = menu.addItem(withTitle: "Open at Login", action: #selector(AppDelegate.toggleOpenAtLogin(_:)),
                                  keyEquivalent: "")
-        login.target = NSApp.delegate as? AppDelegate
+        login.target = delegate
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
+        let theme = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
+        let themeMenu = NSMenu()
+        for option in [DocksideTheme.glass, .pixel] {
+            let item = NSMenuItem(title: option == .glass ? "Glass" : "Pixel",
+                                  action: #selector(AppDelegate.selectTheme(_:)), keyEquivalent: "")
+            item.target = delegate
+            item.representedObject = option.rawValue
+            item.state = delegate?.selectedTheme == option ? .on : .off
+            themeMenu.addItem(item)
+        }
+        theme.submenu = themeMenu
+        menu.addItem(theme)
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit Dockside", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "")
         quit.target = NSApp
