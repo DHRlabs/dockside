@@ -33,7 +33,7 @@ struct UsageReading {
 
     func percentageText(at now: Date = Date()) -> String {
         guard isCurrent(at: now), let used else { return "--" }
-        return String(format: "%.0f%%", locale: .current, used)
+        return String(format: "%.0f%% used", locale: .current, used)
     }
 
     func resetLine(at now: Date = Date()) -> String? {
@@ -42,12 +42,11 @@ struct UsageReading {
     }
 
     func verdictLine(at now: Date = Date()) -> String? {
-        guard isCurrent(at: now), let used, let pace = pace(at: now),
-              let reset = resetLine(at: now) else { return nil }
+        guard isCurrent(at: now), let used, let pace = pace(at: now) else { return nil }
         let delta = Int(abs((used - pace * 100).rounded()))
-        if delta == 0 { return "on pace, \(reset)" }
+        if delta == 0 { return "on pace" }
         let direction = used >= pace * 100 ? "over" : "under"
-        return "\(delta)% \(direction) pace, \(reset)"
+        return "\(delta)% \(direction) pace"
     }
 
     private static func timeText(_ date: Date, relativeTo now: Date) -> String {
@@ -85,7 +84,7 @@ final class UsagePoller {
     private var grokReading = UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
 
     private static let emptyClaude = [
-        UsageReading.empty("Claude 5 hr", provider: .claude, duration: 5 * 3600),
+        UsageReading.empty("Claude 5h", provider: .claude, duration: 5 * 3600),
         UsageReading.empty("Claude", provider: .claude, duration: 7 * 86400)
     ]
 
@@ -157,7 +156,7 @@ private enum UsageClient {
         }.value
         guard let cached = scan.reading else { return .unavailable }
         return .readings([
-            claudeReading(cached.response.fiveHour, label: "Claude 5 hr",
+            claudeReading(cached.response.fiveHour, label: "Claude 5h",
                           duration: 5 * 3600, observedAt: cached.savedAt),
             claudeReading(cached.response.sevenDay, label: "Claude",
                           duration: 7 * 86400, observedAt: cached.savedAt)
@@ -189,7 +188,7 @@ private enum UsageClient {
             return [UsageReading.empty("Codex", provider: .codex)]
         }
         return windows.map { window, duration in
-            let label = window.label == "5 hours" ? "Codex 5 hr" : "Codex"
+            let label = window.label == "5 hours" ? "Codex 5h" : "Codex"
             return UsageReading(label: label, provider: .codex,
                          duration: duration, used: window.used.map(Double.init),
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
