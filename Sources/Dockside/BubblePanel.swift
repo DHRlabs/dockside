@@ -34,23 +34,35 @@ final class BubblePanel: NSPanel {
                                                  fonts: MeterFonts) -> CGFloat {
         let nameWidth = ceil(textSize(reading.label, font: fonts.name).width)
         let percentWidth = ceil(textSize(reading.percentageText(at: now), font: fonts.percent).width)
-        let gap = fonts.gap
-        return nameWidth + percentWidth + gap + (reading.resetLine(at: now).map {
-            gap + ceil(textSize($0, font: fonts.name).width)
-        } ?? 0)
+        guard let reset = reading.resetLine(at: now) else {
+            return nameWidth + percentWidth + fonts.gap
+        }
+        return nameWidth + percentWidth + 2 * fonts.gap + ceil(textSize(reset, font: fonts.name).width)
     }
 
-    fileprivate static func meterWidths(height: CGFloat, readings: [UsageReading], at now: Date)
-        -> (natural: CGFloat, minimum: CGFloat) {
-        let fonts = meterFonts(nameSize: height * 0.2, percentSize: height * 0.22)
-        let widths = readings.map {
-            meterTitleLineWidth($0, at: now, fonts: fonts)
+    fileprivate static func fittedMeterFonts(height: CGFloat, readings: [UsageReading],
+                                             meterWidth: CGFloat) -> MeterFonts {
+        var nameSize = max(6, height * 0.2)
+        var percentSize = max(6, height * 0.22)
+        var fonts = meterFonts(nameSize: nameSize, percentSize: percentSize)
+        while nameSize > 6 || percentSize > 6 {
+            let widestLabel = readings.map { ceil(textSize($0.label, font: fonts.name).width) }.max() ?? 0
+            guard widestLabel + ceil(textSize("100%", font: fonts.percent).width) + fonts.gap > meterWidth else {
+                break
+            }
+            nameSize = max(6, nameSize - 0.1)
+            percentSize = max(6, percentSize - 0.1)
+            fonts = meterFonts(nameSize: nameSize, percentSize: percentSize)
         }
-        let minimum = readings.map {
-            ceil(textSize($0.label, font: fonts.name).width) +
-                ceil(textSize($0.percentageText(at: now), font: fonts.percent).width) + fonts.gap
-        }.max() ?? 0
-        return (widths.max() ?? minimum, minimum)
+        return fonts
+    }
+
+    fileprivate static func meterWidths(height: CGFloat, readings: [UsageReading])
+        -> (natural: CGFloat, minimum: CGFloat) {
+        let fonts = meterFonts(nameSize: 6, percentSize: 6)
+        let nameWidth = readings.map { ceil(textSize($0.label, font: fonts.name).width) }.max() ?? 0
+        let minimum = nameWidth + ceil(textSize("100%", font: fonts.percent).width) + fonts.gap
+        return (height * 1.6, minimum)
     }
 
     fileprivate static func meterLayout(height: CGFloat, available: CGFloat, count: Int,
@@ -61,7 +73,7 @@ final class BubblePanel: NSPanel {
         let gap = height * meterGapRatio
         let meterWidth = min(naturalMeterWidth,
                              max(0, (available - 2 * inset - gap * CGFloat(count - 1)) / CGFloat(count)))
-        guard meterWidth >= minimumMeterWidth else { return nil }
+        guard meterWidth >= min(minimumMeterWidth, naturalMeterWidth) else { return nil }
         let width = 2 * inset + CGFloat(count) * meterWidth + CGFloat(count - 1) * gap
         return (inset, gap, meterWidth, min(available, width))
     }
@@ -122,8 +134,7 @@ final class BubblePanel: NSPanel {
         let count = max(1, readings.count)
         let height = dockFrame.height
         let available = dockFrame.minX - Self.dockGap - screen.frame.minX
-        let now = Date()
-        let widths = Self.meterWidths(height: height, readings: readings, at: now)
+        let widths = Self.meterWidths(height: height, readings: readings)
         guard let layout = Self.meterLayout(height: height, available: available, count: count,
                                             naturalMeterWidth: widths.natural,
                                             minimumMeterWidth: widths.minimum) else {
@@ -249,7 +260,7 @@ private final class UsageMetersView: NSView {
         let height = bounds.height
         let count = readings.count
         let now = Date()
-        let widths = BubblePanel.meterWidths(height: height, readings: readings, at: now)
+        let widths = BubblePanel.meterWidths(height: height, readings: readings)
         guard let layout = BubblePanel.meterLayout(
             height: height, available: bounds.width, count: count,
             naturalMeterWidth: widths.natural, minimumMeterWidth: widths.minimum) else {
@@ -258,20 +269,30 @@ private final class UsageMetersView: NSView {
         let inset = layout.inset
         let gap = layout.gap
         let meterWidth = layout.meterWidth
-        let fonts = BubblePanel.meterFonts(nameSize: height * 0.2, percentSize: height * 0.22)
+        let fonts = BubblePanel.fittedMeterFonts(height: height, readings: readings,
+                                                 meterWidth: meterWidth)
         let barGap = height * 0.06
         let barHeight = height * 0.08
-        let barY = (height - fonts.lineHeight - barGap - barHeight) / 2
+        let resetFont = NSFont.systemFont(ofSize: max(6, height * 9 / 58))
+        let resetHeight = fontHeight(resetFont)
+        let resetGap = height * 4 / 58
+        let blockHeight = resetHeight + resetGap + barHeight + barGap + fonts.lineHeight
+        let resetY = (height - blockHeight) / 2
+        let barY = resetY + resetHeight + resetGap
         let lineY = barY + barHeight + barGap
 
         for (index, reading) in readings.enumerated() {
             let x = inset + CGFloat(index) * (meterWidth + gap)
             drawMeterTitleLine(reading, at: now,
                                in: NSRect(x: x, y: lineY, width: meterWidth, height: fonts.lineHeight),
-                               fonts: fonts,
+                               fonts: fonts, showReset: false,
                                isDark: isDarkAppearance)
             drawMeter(reading, in: NSRect(x: x, y: barY, width: meterWidth, height: barHeight),
-                      at: now, isDark: isDarkAppearance)
+                      at: now, dockHeight: height, isDark: isDarkAppearance)
+            if let reset = reading.resetLine(at: now) {
+                drawText(reset, in: NSRect(x: x, y: resetY, width: meterWidth, height: resetHeight),
+                         font: resetFont, color: meterTertiaryLabelColor(isDark: isDarkAppearance))
+            }
         }
     }
 
@@ -379,12 +400,12 @@ private final class HoverCardRowsView: NSView {
             drawMeterTitleLine(reading, at: now,
                                in: NSRect(x: padding, y: lineY, width: bounds.width - padding * 2,
                                           height: fonts.lineHeight),
-                               fonts: fonts,
+                               fonts: fonts, showReset: true,
                                isDark: isDark)
             drawMeter(reading,
                       in: NSRect(x: padding, y: lineY - barGap - barHeight,
                                  width: bounds.width - padding * 2, height: barHeight),
-                      at: now, isDark: isDark)
+                      at: now, dockHeight: 58, isDark: isDark)
             if let verdict = reading.verdictLine(at: now) {
                 drawText(verdict,
                          in: NSRect(x: padding, y: top - rowHeight + 3,
@@ -558,6 +579,7 @@ private func drawText(_ text: String, in rect: NSRect, font: NSFont, color: NSCo
 @MainActor
 private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: NSRect,
                                 fonts: BubblePanel.MeterFonts,
+                                showReset: Bool,
                                 isDark: Bool) {
     let nameWidth = ceil(textSize(reading.label, font: fonts.name).width)
     let percent = reading.percentageText(at: now)
@@ -576,10 +598,10 @@ private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: 
              color: reading.share(at: now) == nil ? meterTertiaryLabelColor(isDark: isDark) : nameColor,
              alignment: .right)
 
-    if let reset = reading.resetLine(at: now) {
+    if showReset, let reset = reading.resetLine(at: now) {
         let resetX = rect.minX + nameWidth + gap
         let resetWidth = percentX - resetX - gap
-        if resetWidth >= textSize("resets…", font: fonts.name).width {
+        if resetWidth >= textSize(reset, font: fonts.name).width {
             drawText(reset,
                      in: NSRect(x: resetX, y: rect.minY - baselineOffset,
                                 width: resetWidth, height: rect.height),
@@ -589,7 +611,8 @@ private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: 
 }
 
 @MainActor
-private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date, isDark: Bool) {
+private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
+                       dockHeight: CGFloat, isDark: Bool) {
     guard rect.width > 0, rect.height > 0 else { return }
     let track = NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2)
     meterTrackColor(isDark: isDark).setFill()
@@ -605,11 +628,16 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date, i
         NSGraphicsContext.restoreGraphicsState()
     }
     if let pace = reading.pace(at: now) {
-        let tick = NSRect(x: rect.minX + rect.width * pace - 0.5, y: rect.minY - 2,
-                          width: 1, height: rect.height + 4)
-        NSColor.textBackgroundColor.setFill()
-        NSRect(x: tick.minX - 1, y: rect.minY, width: 3, height: rect.height).fill()
-        meterTickColor(isDark: isDark).setFill()
+        let tickWidth = max(1.5, dockHeight * 2 / 58)
+        let tickExtension = dockHeight * 3 / 58
+        let tick = NSRect(x: rect.minX + rect.width * pace - tickWidth / 2,
+                          y: rect.minY - tickExtension,
+                          width: tickWidth, height: rect.height + 2 * tickExtension)
+        if case .grok = reading.provider {
+            (isDark ? NSColor.black : NSColor.white).withAlphaComponent(0.65).setFill()
+            NSRect(x: tick.minX - 0.75, y: rect.minY, width: tick.width + 1.5, height: rect.height).fill()
+        }
+        (isDark ? NSColor.white : NSColor.labelColor).setFill()
         tick.fill()
     }
 }
@@ -638,10 +666,4 @@ private func meterTrackColor(isDark: Bool) -> NSColor {
     isDark
         ? NSColor(srgbRed: 44.0 / 255, green: 54.0 / 255, blue: 72.0 / 255, alpha: 1)
         : .quaternaryLabelColor
-}
-
-private func meterTickColor(isDark: Bool) -> NSColor {
-    isDark
-        ? NSColor(srgbRed: 228.0 / 255, green: 234.0 / 255, blue: 243.0 / 255, alpha: 1)
-        : .labelColor
 }

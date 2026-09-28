@@ -8,7 +8,7 @@ Dockside is a small native macOS app. A floating bubble sits just to the left of
 
 The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. It follows your light or dark appearance, Liquid Glass, and Reduce Transparency settings, and uses the space beside the Dock.
 
-Each meter shows its name, reset time, and percent used on one line, with the bar below. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
+Each meter shows its name and percent used above the bar, with the reset countdown below. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
 
 Sources:
 
@@ -21,7 +21,7 @@ Dockside hosts a button strip at the right end of the Dock. Other apps can add b
 
 ## Reading the meters
 
-A vertical tick shows how much of the time window has passed. Reset text can look like "resets 3:30pm", "resets tomorrow 3:30pm", or "resets Fri 1:00pm".
+A vertical tick shows how much of the time window has passed. Reset countdowns can look like "5d 9h", "5h 12m", or "12m".
 
 The hover card keeps one pace line, such as "14% under pace". Unavailable readings show "--", no reset or tick, and an empty track.
 
