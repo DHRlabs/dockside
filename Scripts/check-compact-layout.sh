@@ -81,10 +81,21 @@ struct CompactLayoutCheck {
                                               minimumWidth: 160)?.width == 160)
 
         let statsView = SystemStatsView(frame: .zero)
-        for height: CGFloat in [40, 58, 100] {
-            assert(statsView.width(for: height, compact: true) == 150)
+        for (theme, normalRatio, compactRatio) in [
+            (DocksideTheme.glass, 3.02, 2.53),
+            (DocksideTheme.pixel, 3.96, 3.28)
+        ] {
+            statsView.setTheme(theme)
+            for height: CGFloat in [40, 58, 100] {
+                let normal = statsView.width(for: height, compact: false)
+                let compact = statsView.width(for: height, compact: true)
+                assert(abs(normal - height * CGFloat(normalRatio)) < 0.01)
+                assert(abs(compact - height * CGFloat(compactRatio)) < 0.01)
+                assert(normal > compact && compact > 0)
+            }
         }
-        print(String(format: "Normal at 58pt: %.1fpt natural, %.1fpt readable minimum; compact: 180-216pt",
+        print("Stats widths passed for both themes at 40, 58, and 100pt")
+        print(String(format: "AI panel normal at 58pt: %.1fpt natural, %.1fpt readable minimum; compact: 180-216pt",
                      natural.width, upper))
         print("Compact layout checks passed")
     }
