@@ -12,7 +12,7 @@ The right strip follows the same Dock position and visibility. Glass shows CPU a
 
 Right-click either surface and choose **Theme** to switch between **Glass**, **Pixel**, and **Rounded Ticks**. The choice is saved. The right strip chooses its compact proportions when the full strip does not fit between the bottom Dock and the screen edge, and returns to the full layout when room allows. Compact Glass and Rounded Ticks keep readable labels and values while reducing gauge width and spacing.
 
-Each AI meter shows its name and percent used above the bar, with the reset countdown below. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
+Each AI meter shows its name and percent used above the bar, with the reset countdown below. Pixel and Rounded Ticks use segmented square AI bars in normal, compact, and hover views. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
 
 Sources:
 
@@ -55,7 +55,7 @@ bash Scripts/check-compact-layout.sh
 
 For a live update, quit Dockside, replace `/Applications/Dockside.app` with the build, then open the installed app. Do not run a second copy beside it.
 
-Status: version 0.5.6 is signed and installed as the single canonical copy; its signature and build match. Live visual and independent inspection passed.
+Status: version 0.5.7 is signed and installed as the single canonical copy; its signature and build match. Independent source/render review passed.
 
 ## Permissions and privacy
 

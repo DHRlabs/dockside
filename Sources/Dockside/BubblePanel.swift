@@ -441,7 +441,7 @@ private final class UsageMetersView: NSView {
                 let color = CGFloat(segmentIndex) < share * CGFloat(segmentCount)
                     ? fillColor(for: reading.provider) : meterTrackColor(isDark: isDark)
                 color.setFill()
-                if theme == .pixel {
+                if theme == .pixel || theme == .ticks {
                     segment.fill()
                 } else {
                     NSBezierPath(roundedRect: segment, xRadius: min(1.5, segmentHeight / 2),
@@ -787,7 +787,7 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
                        dockHeight: CGFloat, isDark: Bool, theme: DocksideTheme = .glass) {
     guard rect.width > 0, rect.height > 0 else { return }
     let share = reading.share(at: now)
-    if theme == .pixel {
+    if theme == .pixel || theme == .ticks {
         let gap = max(0.7, rect.height * 0.24)
         let count = max(1, Int(rect.width / (rect.height * 1.65)))
         let segmentWidth = max(0, (rect.width - gap * CGFloat(count - 1)) / CGFloat(count))
