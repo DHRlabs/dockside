@@ -24,8 +24,8 @@ final class SystemStatsView: NSView {
     func width(for height: CGFloat, compact: Bool) -> CGFloat {
         guard height > 0 else { return 0 }
         switch (theme, compact) {
-        case (.glass, false): return height * 3.49
-        case (.glass, true): return height * 3.00
+        case (.glass, false), (.ticks, false): return height * 3.49
+        case (.glass, true), (.ticks, true): return height * 3.00
         case (.pixel, false): return height * 3.96
         case (.pixel, true): return height * 3.28
         }
@@ -54,10 +54,10 @@ final class SystemStatsView: NSView {
         guard height > 0, bounds.width > 0 else { return }
         let dark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
         let palette = pixelPalette()
-        if theme == .glass {
-            drawGlassMeters(height: height, palette: palette, dark: dark)
-        } else {
+        if theme == .pixel {
             drawPixelMeters(height: height, palette: palette, dark: dark)
+        } else {
+            drawGlassMeters(height: height, palette: palette, dark: dark)
         }
     }
 
@@ -95,14 +95,38 @@ final class SystemStatsView: NSView {
         let radius = (outerWidth - stroke) / 2
         let baselineY = height * 0.40
         let center = NSPoint(x: centerX, y: baselineY)
-        strokeGlassSemicircle(center: center, radius: radius, width: stroke,
-                              fraction: nil, color: trackColor(dark: dark))
-        if let value, value.isFinite {
+        if theme == .ticks {
+            let fraction = value.flatMap { $0.isFinite ? min(1, max(0, $0 / 100)) : nil } ?? 0
+            let filled = Int(fraction * 13)
+            let tickWidth = outerWidth * 0.044
+            let tickRadius = (outerWidth - tickWidth) / 2
+            let tickLength = outerWidth * 0.10
+            for index in 0..<13 {
+                let angle = Double.pi - Double.pi * Double(index) / 12
+                let outer = NSPoint(x: center.x + CGFloat(cos(angle)) * tickRadius,
+                                    y: center.y + CGFloat(sin(angle)) * tickRadius)
+                let innerRadius = tickRadius - tickLength
+                let inner = NSPoint(x: center.x + CGFloat(cos(angle)) * innerRadius,
+                                    y: center.y + CGFloat(sin(angle)) * innerRadius)
+                let tick = NSBezierPath()
+                tick.lineWidth = tickWidth
+                tick.lineCapStyle = .round
+                tick.move(to: inner)
+                tick.line(to: outer)
+                (index < filled ? accent : trackColor(dark: dark)).setStroke()
+                tick.stroke()
+            }
+        } else if let value, value.isFinite {
+            strokeGlassSemicircle(center: center, radius: radius, width: stroke,
+                                  fraction: nil, color: trackColor(dark: dark))
             let fraction = min(1, max(0, value / 100))
             if fraction > 0 {
                 strokeGlassSemicircle(center: center, radius: radius, width: stroke,
                                       fraction: fraction, color: accent)
             }
+        } else {
+            strokeGlassSemicircle(center: center, radius: radius, width: stroke,
+                                  fraction: nil, color: trackColor(dark: dark))
         }
 
         let number = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
