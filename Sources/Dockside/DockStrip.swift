@@ -698,8 +698,13 @@ enum DocksideContextMenu {
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         let theme = NSMenuItem(title: "Theme", action: nil, keyEquivalent: "")
         let themeMenu = NSMenu()
-        for option in [DocksideTheme.glass, .pixel] {
-            let item = NSMenuItem(title: option == .glass ? "Glass" : "Pixel",
+        for option in [DocksideTheme.glass, .pixel, .ticks] {
+            let title = switch option {
+            case .glass: "Glass"
+            case .pixel: "Pixel"
+            case .ticks: "Rounded Ticks"
+            }
+            let item = NSMenuItem(title: title,
                                   action: #selector(AppDelegate.selectTheme(_:)), keyEquivalent: "")
             item.target = delegate
             item.representedObject = option.rawValue

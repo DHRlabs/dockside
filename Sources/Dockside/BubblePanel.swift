@@ -3,6 +3,7 @@ import AppKit
 enum DocksideTheme: String {
     case glass
     case pixel
+    case ticks
 }
 
 @MainActor
