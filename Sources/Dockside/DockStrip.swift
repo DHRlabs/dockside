@@ -350,6 +350,7 @@ final class DockStripPanel: NSPanel {
 
     func setTheme(_ theme: DocksideTheme) {
         stripView.setTheme(theme)
+        if let location { place(at: location) }
     }
 
     func place(at location: DockLocation?) {
@@ -543,6 +544,8 @@ private final class DockStripView: NSView {
                                          theme: theme)
         }
         needsDisplay = true
+        needsLayout = true
+        layoutSubtreeIfNeeded()
     }
 
     func setCompactStats(_ compact: Bool) {
