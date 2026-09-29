@@ -8,7 +8,7 @@ Dockside is a small native macOS app. A floating bubble sits just to the left of
 
 The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. It follows your light or dark appearance, Liquid Glass, and Reduce Transparency settings, and uses the space beside the Dock.
 
-The right strip follows the same Dock position and visibility. Glass shows CPU and RAM in teal and orange upper semicircles, with centered percentages and readable labels below. Rounded Ticks uses the same layout with 13 round-ended ticks for each gauge. Average CPU temperature is a separate Celsius value above its own horizontal bar; the bar's neutral fill shows the 0–100°C scale while the number stays exact. Pixel keeps its thick two-row square-cell CPU/RAM arches and separate dot-matrix temperature with `°C`. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
+The right strip follows the same Dock position and visibility. Glass shows CPU and RAM in teal and orange upper semicircles, with centered percentages and readable labels below. Rounded Ticks uses the same layout with 13 round-ended ticks for each gauge. Average CPU temperature is a separate Celsius value above its own horizontal bar; the bar uses a fixed 0–100°C display scale with a green-yellow-red fill, while the number stays exact. This display scale is not an established hardware limit. Pixel keeps its thick two-row square-cell CPU/RAM arches and separate dot-matrix temperature with `°C`. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
 
 Right-click either surface and choose **Theme** to switch between **Glass**, **Pixel**, and **Rounded Ticks**. The choice is saved. The right strip chooses its compact proportions when the full strip does not fit between the bottom Dock and the screen edge, and returns to the full layout when room allows. Compact Glass and Rounded Ticks keep readable labels and values while reducing gauge width and spacing.
 
@@ -55,7 +55,7 @@ bash Scripts/check-compact-layout.sh
 
 For a live update, quit Dockside, replace `/Applications/Dockside.app` with the build, then open the installed app. Do not run a second copy beside it.
 
-Status: version 0.5.5 is signed and installed as the single canonical copy; the installed signature and build match. Independent live inspection passed.
+Status: version 0.5.6 is signed and installed as the single canonical copy; its signature and build match. Live visual and independent inspection passed.
 
 ## Permissions and privacy
 

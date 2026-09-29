@@ -169,8 +169,10 @@ final class SystemStatsView: NSView {
         let fraction = CGFloat(min(1, max(0, value / 100)))
         guard fraction > 0 else { return }
         let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * fraction, height: rect.height)
-        primaryColor(dark: dark).setFill()
-        NSBezierPath(roundedRect: fill, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+        NSGraphicsContext.saveGraphicsState()
+        NSBezierPath(roundedRect: fill, xRadius: rect.height / 2, yRadius: rect.height / 2).addClip()
+        NSGradient(colors: [.systemGreen, .systemYellow, .systemRed])?.draw(in: rect, angle: 0)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     private func drawGlassLabel(_ text: String, centerX: CGFloat, centerY: CGFloat,
