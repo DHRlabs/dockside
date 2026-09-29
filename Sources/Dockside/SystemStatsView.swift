@@ -24,8 +24,8 @@ final class SystemStatsView: NSView {
     func width(for height: CGFloat, compact: Bool) -> CGFloat {
         guard height > 0 else { return 0 }
         switch (theme, compact) {
-        case (.glass, false): return height * 3.02
-        case (.glass, true): return height * 2.53
+        case (.glass, false): return height * 3.49
+        case (.glass, true): return height * 3.00
         case (.pixel, false): return height * 3.96
         case (.pixel, true): return height * 3.28
         }
@@ -62,88 +62,119 @@ final class SystemStatsView: NSView {
     }
 
     private func drawGlassMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
-        let diameter = height * (compact ? 0.54 : 0.62)
-        let centerY = height * (compact ? 0.50 : 0.55)
-        let cpuCenterX = bounds.minX + bounds.width * (compact ? 0.21 : 0.245)
-        let ramCenterX = cpuCenterX + height * (compact ? 0.75 : 0.96)
-        let temperatureCenterX = bounds.minX + bounds.width * (compact ? 0.79 : 0.82)
-        let label = compact ? nil : "CPU"
-        drawGlassRing(reading?.cpuPercent, label: label,
-                      center: NSPoint(x: cpuCenterX, y: centerY), diameter: diameter,
-                      height: height, compact: compact,
-                      accent: palette.accent, dark: dark)
-        drawGlassRing(reading?.memoryPercent, label: compact ? nil : "RAM",
-                      center: NSPoint(x: ramCenterX, y: centerY), diameter: diameter,
-                      height: height, compact: compact,
-                      accent: palette.warm, dark: dark)
-        let temperatureWidth = height * (compact ? 0.72 : 0.70)
-        let temperatureHeight = height * 0.30
+        let archWidth = compact ? min(height * 0.84, 46) : height * 0.92
+        let cpuCenterX = bounds.minX + height * (compact ? 0.68 : 0.70)
+        let ramCenterX = bounds.minX + height * (compact ? 1.62 : 1.80)
+        let temperatureCenterX = bounds.minX + height * (compact ? 2.51 : 2.87)
+        let temperatureWidth = height * (compact ? 0.72 : 0.84)
+
+        drawGlassUsageSemicircle(reading?.cpuPercent, label: "CPU", centerX: cpuCenterX,
+                                 outerWidth: archWidth, height: height, compact: compact,
+                                 accent: palette.accent, dark: dark)
+        drawGlassUsageSemicircle(reading?.memoryPercent, label: "RAM", centerX: ramCenterX,
+                                 outerWidth: archWidth, height: height, compact: compact,
+                                 accent: palette.warm, dark: dark)
+
+        let temperatureTextHeight = height * 0.28
         drawGlassTemperature(reading?.temperatureCelsius,
                              in: NSRect(x: temperatureCenterX - temperatureWidth / 2,
-                                        y: height * 0.27,
-                                        width: temperatureWidth, height: temperatureHeight), dark: dark)
+                                        y: height * 0.64 - temperatureTextHeight / 2,
+                                        width: temperatureWidth, height: temperatureTextHeight), dark: dark)
+        drawGlassTemperatureBar(reading?.temperatureCelsius,
+                                in: NSRect(x: temperatureCenterX - temperatureWidth / 2,
+                                           y: height * 0.42 - max(3, height * 0.08) / 2,
+                                           width: temperatureWidth, height: max(3, height * 0.08)), dark: dark)
+        drawGlassLabel("TEMP", centerX: temperatureCenterX, centerY: height * 0.21,
+                       width: temperatureWidth, size: glassLabelSize(height: height, compact: compact), dark: dark)
     }
 
-    private func drawGlassRing(_ value: Double?, label: String?, center: NSPoint,
-                               diameter: CGFloat, height: CGFloat, compact: Bool,
-                               accent: NSColor, dark: Bool) {
-        let thickness = height * (compact ? 0.065 : 0.075)
-        let radius = diameter / 2 - thickness / 2
-        let ring = NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius,
-                                              width: radius * 2, height: radius * 2))
-        ring.lineWidth = thickness
-        trackColor(dark: dark).setStroke()
-        ring.stroke()
+    private func drawGlassUsageSemicircle(_ value: Double?, label: String, centerX: CGFloat,
+                                          outerWidth: CGFloat, height: CGFloat, compact: Bool,
+                                          accent: NSColor, dark: Bool) {
+        let stroke = height * 0.075
+        let radius = (outerWidth - stroke) / 2
+        let baselineY = height * 0.40
+        let center = NSPoint(x: centerX, y: baselineY)
+        strokeGlassSemicircle(center: center, radius: radius, width: stroke,
+                              fraction: nil, color: trackColor(dark: dark))
         if let value, value.isFinite {
             let fraction = min(1, max(0, value / 100))
             if fraction > 0 {
-                let arc = NSBezierPath()
-                arc.move(to: NSPoint(x: center.x, y: center.y + radius))
-                arc.appendArc(withCenter: center, radius: radius, startAngle: 90,
-                              endAngle: 90 - CGFloat(360 * fraction), clockwise: true)
-                arc.lineWidth = thickness
-                arc.lineCapStyle = .round
-                accent.setStroke()
-                arc.stroke()
+                strokeGlassSemicircle(center: center, radius: radius, width: stroke,
+                                      fraction: fraction, color: accent)
             }
         }
 
         let number = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
         let text = number.map { "\($0)%" } ?? "--%"
-        let textWidth = max(1, diameter - thickness * 2 - 2)
-        let baseSize = height * 0.14
+        let baseSize = min(12, height * 0.207)
         let baseFont = NSFont.monospacedDigitSystemFont(ofSize: baseSize, weight: .semibold)
         let measuredWidth = ceil(("100%" as NSString).size(withAttributes: [.font: baseFont]).width)
-        let fittedSize = baseSize * min(1, textWidth / max(1, measuredWidth))
-        let font = NSFont.monospacedDigitSystemFont(ofSize: max(4, fittedSize), weight: .semibold)
+        let fittedSize = baseSize * min(1, outerWidth / max(1, measuredWidth))
+        let font = NSFont.systemFont(ofSize: max(8, fittedSize), weight: .semibold)
         let textHeight = fontHeight(font)
-        drawLabel(text, in: NSRect(x: center.x - textWidth / 2, y: center.y - textHeight / 2,
-                                   width: textWidth, height: textHeight),
+        drawLabel(text, in: NSRect(x: centerX - outerWidth / 2,
+                                   y: height * 0.455 - textHeight / 2,
+                                   width: outerWidth, height: textHeight),
                   font: font, color: number == nil ? tertiaryColor(dark: dark) : primaryColor(dark: dark),
                   alignment: .center)
 
-        if let label {
-            let labelFont = NSFont.systemFont(ofSize: max(5, min(9, height * 0.10)), weight: .medium)
-            let labelHeight = fontHeight(labelFont)
-            drawLabel(label, in: NSRect(x: center.x - diameter / 2, y: height * 0.09,
-                                        width: diameter, height: labelHeight),
-                      font: labelFont, color: secondaryColor(dark: dark), alignment: .center)
-        }
+        drawGlassLabel(label, centerX: centerX, centerY: height * 0.21,
+                       width: outerWidth, size: glassLabelSize(height: height, compact: compact), dark: dark)
     }
 
     private func drawGlassTemperature(_ value: Double?, in rect: NSRect, dark: Bool) {
         let degrees = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
         let text = degrees.map { "\($0)°C" } ?? "--°C"
-        let baseSize = min(16, rect.height * 0.50)
-        let baseFont = NSFont.monospacedDigitSystemFont(ofSize: baseSize, weight: .medium)
-        let measuredWidth = ceil((text as NSString).size(withAttributes: [.font: baseFont]).width)
+        let baseSize = min(12, rect.height * 0.75)
+        let baseFont = NSFont.systemFont(ofSize: baseSize, weight: .semibold)
+        let measuredWidth = ceil(("100°C" as NSString).size(withAttributes: [.font: baseFont]).width)
         let size = baseSize * min(1, rect.width / max(1, measuredWidth))
-        let font = NSFont.monospacedDigitSystemFont(ofSize: max(6, size), weight: .medium)
+        let font = NSFont.systemFont(ofSize: max(7.5, size), weight: .semibold)
         let textHeight = fontHeight(font)
         drawLabel(text, in: NSRect(x: rect.minX, y: rect.midY - textHeight / 2,
                                    width: rect.width, height: textHeight),
                   font: font, color: degrees == nil ? tertiaryColor(dark: dark) : primaryColor(dark: dark),
                   alignment: .center)
+    }
+
+    private func drawGlassTemperatureBar(_ value: Double?, in rect: NSRect, dark: Bool) {
+        trackColor(dark: dark).setFill()
+        NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+        guard let value, value.isFinite else { return }
+        let fraction = CGFloat(min(1, max(0, value / 100)))
+        guard fraction > 0 else { return }
+        let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * fraction, height: rect.height)
+        primaryColor(dark: dark).setFill()
+        NSBezierPath(roundedRect: fill, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+    }
+
+    private func drawGlassLabel(_ text: String, centerX: CGFloat, centerY: CGFloat,
+                                width: CGFloat, size: CGFloat, dark: Bool) {
+        let font = NSFont.systemFont(ofSize: size, weight: .semibold)
+        let labelHeight = fontHeight(font)
+        drawLabel(text, in: NSRect(x: centerX - width / 2, y: centerY - labelHeight / 2,
+                                   width: width, height: labelHeight),
+                  font: font, color: primaryColor(dark: dark), alignment: .center)
+    }
+
+    private func glassLabelSize(height: CGFloat, compact: Bool) -> CGFloat {
+        min(compact ? 10 : 11, max(8.5, height * (compact ? 0.172 : 0.19)))
+    }
+
+    private func strokeGlassSemicircle(center: NSPoint, radius: CGFloat, width: CGFloat,
+                                       fraction: Double?, color: NSColor) {
+        let path = NSBezierPath()
+        let endAngle: CGFloat
+        if let fraction { endAngle = 180 - CGFloat(180 * fraction) }
+        else { endAngle = 0 }
+        path.move(to: NSPoint(x: center.x - radius, y: center.y))
+        path.appendArc(withCenter: center, radius: radius, startAngle: 180,
+                       endAngle: endAngle, clockwise: true)
+        path.lineWidth = width
+        path.lineCapStyle = .round
+        color.setStroke()
+        path.stroke()
     }
 
     private func drawPixelMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
