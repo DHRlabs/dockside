@@ -8,9 +8,9 @@ Dockside is a small native macOS app. A floating bubble sits just to the left of
 
 The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. It follows your light or dark appearance, Liquid Glass, and Reduce Transparency settings, and uses the space beside the Dock.
 
-The right strip follows the same Dock position and visibility. Glass shows CPU and RAM in teal and orange rings with centered percentages and labels below; compact Glass omits the labels. Pixel uses thick two-row square-cell arches with centered percentages and labels below. Both themes show average CPU temperature separately from the usage meters, as a plain Celsius value in Glass and dot-matrix digits with `°C` in Pixel. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
+The right strip follows the same Dock position and visibility. Glass shows CPU and RAM in teal and orange upper semicircles, with centered percentages and readable labels below. Average CPU temperature is a separate Celsius value above its own horizontal bar; the bar's neutral fill shows the 0–100°C scale while the number stays exact. Pixel keeps its thick two-row square-cell CPU/RAM arches and separate dot-matrix temperature with `°C`. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
 
-Right-click either surface and choose **Theme** to switch between **Glass** and **Pixel**. The choice is saved. The right strip chooses its compact proportions when the full strip does not fit between the bottom Dock and the screen edge, and returns to the full layout when room allows.
+Right-click either surface and choose **Theme** to switch between **Glass** and **Pixel**. The choice is saved. The right strip chooses its compact proportions when the full strip does not fit between the bottom Dock and the screen edge, and returns to the full layout when room allows. Compact Glass keeps readable labels and values while reducing arch width and spacing.
 
 Each AI meter shows its name and percent used above the bar, with the reset countdown below. Hover for 0.3 seconds to see pace details. Opens at login by default when installed in Applications. Right-click to turn that off or quit.
 
@@ -55,7 +55,7 @@ bash Scripts/check-compact-layout.sh
 
 For a live update, quit Dockside, replace `/Applications/Dockside.app` with the build, then open the installed app. Do not run a second copy beside it.
 
-Status: version 0.5.3 is reviewed, signed, and live in Applications as the single copy. The installed signature is valid and its SHA-256 matches the built app.
+Status: version 0.5.4 is signed and installed as the single canonical copy; the installed signature and build match. Independent live inspection passed.
 
 ## Permissions and privacy
 

@@ -607,7 +607,7 @@ private final class DockStripView: NSView {
     }
 
     private static func desktopButtonWidth(for height: CGFloat) -> CGFloat {
-        max(28, min(32, height * 0.52))
+        max(42, min(46, height * 0.78))
     }
 }
 
