@@ -2,7 +2,7 @@
 
 ## What Dockside is
 
-Dockside is a native macOS app that shows AI usage meters in a small floating bubble beside the Dock. It follows the Dock's size, position, glass and visibility, and includes a right-end button strip for DHRlabs apps.
+Dockside is a native macOS app that shows AI usage meters in a small floating bubble beside the Dock. It follows the Dock's size, position and visibility, uses opaque rounded backgrounds, and includes a right-end button strip for DHRlabs apps.
 
 ## Where it stands
 
@@ -16,9 +16,10 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 - V0.5.5 was the prior live version. Its signed binary SHA-256 was `67fd5d992ae9071e18c90d5835d941abefbcd8b27741785ce8e64da3df740e00`.
 - V0.5.6 was the prior live version. Its signed binary SHA-256 was `cecf85a91965e5b4700542dd467bd82bb44d55facd904fad2427e8dcbbbd7d97`.
 - V0.5.7 was the prior live version. Its signed binary SHA-256 was `73591148d7554919edd974a01b344e9633ac708ad4c7baa4e899be847fe4764b`.
-- V0.5.8 is live as the single canonical `/Applications` copy. Its signed binary SHA-256 is `bbfd42893fbe2feb39909fb3279ca3ed9e5ea4b86e7203efe7432af765d5d24a`; signature is valid and build/install hashes match. The foreground now stays above the adaptive glass surface, so its colors follow Dockside's Light or Dark appearance rather than the backdrop; the glass still adapts.
-- The installed Rounded Ticks right panel showed 21% CPU, 86% RAM, and 65°C. Labels, ticks, temperature gradient, and the Show desktop button were visible; Show desktop was off. No button action was tested. DockStrip actions and the protocol are unchanged.
-- GPT-6 Sol passed all four preinstall review axes. A production fixture showed readable foreground content, but the capture excluded the separate backing window, so glass sampling across light and dark backgrounds and pixel stability remain unverified. A live capture of the changed left panel was unavailable.
+- V0.5.8 was the prior live version. Its signed binary SHA-256 was `bbfd42893fbe2feb39909fb3279ca3ed9e5ea4b86e7203efe7432af765d5d24a`; signature was valid and build/install hashes matched. It used an adaptive glass surface beneath foreground content.
+- V0.5.9 is live as the single canonical `/Applications` copy. Its signed binary SHA-256 is `0243bbf384af78802b9fd6ce9a580b9c3805dd59df0ff7023f126dfe8f6f72af`; signature is valid and build/install hashes match. Rounded Ticks remained selected after install.
+- The live right panel showed 22% CPU, 86% RAM, and 69°C. Its text, gauges, temperature bar, and opaque rounded background were clear; the resolved background color had alpha 1.0. Show desktop was visible and off; no button action was tested. Source and executable checks found no behind-window effect classes, setting, polling, or refresh path.
+- A live capture of the changed left panel was unavailable. The same opaque background component is used by the bubble and hover card; source and executable checks cover those shared surfaces.
 - V0.5.4 used Glass B: smooth teal and orange CPU/RAM upper semicircles, centered values and labels below, and a separate Celsius number above the neutral 0–100°C temperature bar. Compact preserved readable labels and values; Pixel drawing was unchanged. The Show desktop hit area is 42–46 pt wide, leaving about 12–14 pt at the right edge.
 - V0.5.5 adds Rounded Ticks beside Glass and Pixel. It uses the Glass labels, temperature display, compact spacing, and 3.49/3.00 width ratios, with 13 separate round-ended gauge ticks. GPT-6 Sol passed all four source/render review axes. Normal and compact renders with full and unknown readings passed, including compact 40/58/100 pt. All 24 Glass/Pixel renders match V0.5.4 byte-for-byte; protected components stayed unchanged except the theme enum.
 - V0.5.6 colors the fixed 0–100°C temperature scale green to yellow to red, revealing the gradient only through the filled portion. This is a display scale, not an established hardware limit. Sol passed four preinstall review axes; boundary renders at 0/25/50/75/100/125°C and unavailable passed, with the exact 125°C label and full bar preserved. All 12 Pixel renders and unavailable Glass/Ticks renders match V0.5.5 byte-for-byte; the temperature bar is the only change.
@@ -57,10 +58,9 @@ Dockside is a native macOS app that shows AI usage meters in a small floating bu
 
 ## Open items and next steps
 
-1. Have Lance glance at light mode and Clear glass once.
-2. V0.4 remains open for settings, an installer, and Lance's choice on bundling a zstd decoder. Claude decoding currently uses Homebrew's `zstd`.
-3. GPU, network, disk, and battery stats remain future ideas.
-4. More subscriptions (Cursor, DomoGPT credits, Gemini, Copilot, DeepSeek, OpenRouter) and Lance's own feeds remain future ideas.
+1. V0.4 remains open for settings, an installer, and Lance's choice on bundling a zstd decoder. Claude decoding currently uses Homebrew's `zstd`.
+2. GPU, network, disk, and battery stats remain future ideas.
+3. More subscriptions (Cursor, DomoGPT credits, Gemini, Copilot, DeepSeek, OpenRouter) and Lance's own feeds remain future ideas.
 
 ## Known facts
 

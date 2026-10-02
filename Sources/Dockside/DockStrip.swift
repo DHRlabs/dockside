@@ -447,13 +447,12 @@ final class DockStripPanel: NSPanel {
         orderOut(nil)
     }
 
-    func refreshGlassAppearance() { stripView.refreshGlassAppearance() }
 }
 
 @MainActor
 private final class DockStripView: NSView {
     private let ordinaryContent: NSView
-    private let backdrop: GlassBackdropView
+    private let background: PanelBackgroundView
     private let statsView = SystemStatsView()
     private var itemViews: [String: DockStripButton] = [:]
     private var buttons: [DockButton] = []
@@ -471,11 +470,11 @@ private final class DockStripView: NSView {
 
     override init(frame frameRect: NSRect) {
         ordinaryContent = NSView()
-        backdrop = GlassBackdropView(contentView: ordinaryContent,
-                                     cornerRadius: BubblePanel.dockPlateCornerRadius)
+        background = PanelBackgroundView(contentView: ordinaryContent,
+                                         cornerRadius: BubblePanel.dockPlateCornerRadius)
         super.init(frame: frameRect)
         ordinaryContent.addSubview(statsView)
-        addSubview(backdrop)
+        addSubview(background)
         addTrackingArea(NSTrackingArea(rect: bounds,
                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
                                       owner: self, userInfo: nil))
@@ -492,7 +491,7 @@ private final class DockStripView: NSView {
         let statsWidth = orientation == .bottom ? statsView.width(for: itemHeight) : 0
         let desktopWidth = Self.desktopButtonWidth(for: itemHeight)
         let contentStart = desktopFirst ? CGFloat(desktop.count) * desktopWidth : 0
-        backdrop.frame = bounds
+        background.frame = bounds
         for (index, model) in ordinary.enumerated() {
             itemViews[model.key]?.frame = NSRect(x: contentStart + CGFloat(index) * itemHeight, y: 0,
                                                   width: itemHeight, height: bounds.height)
@@ -578,8 +577,6 @@ private final class DockStripView: NSView {
         let statsWidth = orientation == .bottom ? statsView.width(for: height, compact: compactStats) : 0
         return CGFloat(ordinaryCount) * height + statsWidth + CGFloat(desktopCount) * Self.desktopButtonWidth(for: height)
     }
-
-    func refreshGlassAppearance() { backdrop.refreshAppearance() }
 
     private func sorted(_ buttons: [DockButton]) -> [DockButton] {
         buttons.sorted {
