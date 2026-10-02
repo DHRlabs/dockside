@@ -36,7 +36,7 @@ does. Human intent and decisions live in the DHRvault note `70 - Projects/Docksi
 ## Stack and build
 
 - Swift, AppKit, SwiftPM executable, no Xcode project. This Mac has Command Line Tools only.
-- Minimum macOS 14; use opaque rounded backgrounds and never sample or adapt to content behind Dockside.
+- Minimum macOS 14; use the system glass look where the SDK has it.
 - `bash Scripts/build.sh` compiles, assembles `build/Dockside.app`, and signs it with the local
   "Apple Development" identity so the Accessibility grant survives rebuilds. It falls back to
   ad-hoc signing on machines without that identity.

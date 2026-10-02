@@ -6,7 +6,7 @@ Dockside is a small native macOS app. A floating bubble sits just to the left of
 
 ## What it does
 
-The bubble matches the Dock's height, position, and visibility, including in full-screen apps. Its text and opaque rounded background follow Dockside's light or dark appearance, regardless of what's behind it.
+The bubble matches the Dock's height, glass, position, and visibility, including in full-screen apps. Its text follows Dockside's light or dark appearance without changing color with the backdrop; the glass surface still responds to content behind it. Reduce Transparency remains respected, and it uses the space beside the Dock.
 
 The right strip follows the same Dock position and visibility. Glass shows CPU and RAM in teal and orange upper semicircles, with centered percentages and readable labels below. Rounded Ticks uses the same layout with 13 round-ended ticks for each gauge. Average CPU temperature is a separate Celsius value above its own horizontal bar; the bar uses a fixed 0–100°C display scale with a green-yellow-red fill, while the number stays exact. This display scale is not an established hardware limit. Pixel keeps its thick two-row square-cell CPU/RAM arches and separate dot-matrix temperature with `°C`. Temperature averages CPU sensor keys currently verified on this Apple M5; other hardware may show `--`. Missing readings show `--`; CPU use appears after the second sample. System stats hide beside a side Dock, while app buttons remain available there.
 
@@ -55,7 +55,7 @@ bash Scripts/check-compact-layout.sh
 
 For a live update, quit Dockside, replace `/Applications/Dockside.app` with the build, then open the installed app. Do not run a second copy beside it.
 
-Status: version 0.5.9 is signed and installed as the single canonical copy; its signature and build match. Rounded Ticks remains selected. The live right panel showed 22% CPU, 86% RAM, and 69°C, with Show desktop present and off. Source and executable checks confirmed there are no behind-window effects; a live capture of the left panel was unavailable.
+Status: version 0.5.8 is signed and installed as the single canonical copy; its signature and build match. The live right strip and production AI foreground fixture were inspected, and independent source/render review passed. The fixture capture omitted its backing window, so cross-background glass sampling and a direct live capture of the changed left panel remain unverified.
 
 ## Permissions and privacy
 

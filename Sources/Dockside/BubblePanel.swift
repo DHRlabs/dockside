@@ -17,6 +17,13 @@ final class BubblePanel: NSPanel {
     fileprivate static let horizontalInsetRatio: CGFloat = 0.28
     fileprivate static let compactWidthCap: CGFloat = 216
     fileprivate static let compactMinimumWidth: CGFloat = 180
+    // Lance's dark-mode Dock plate calibration: black tint over regular glass.
+    static let tintAlpha: CGFloat = 0.55
+    // Measured black veil compensating for NSGlassEffectView's brighter black tint.
+    static let darkGlassVeilAlpha: CGFloat = 0.70
+    // A one-point inner rim, tuned against the Dock's lighter plate edge.
+    static let glassRimAlpha: CGFloat = 0.22
+
     fileprivate struct MeterFonts {
         let name: NSFont
         let percent: NSFont
@@ -111,6 +118,9 @@ final class BubblePanel: NSPanel {
     private var readings: [UsageReading] = []
     private var theme: DocksideTheme = .glass
     private var openTimer: Timer?
+    private var accessibilityObserver: NSObjectProtocol?
+    private var glassSettingsTimer: Timer?
+    var onGlassAppearanceRefresh: (() -> Void)?
 
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 1, height: 1),
@@ -127,6 +137,17 @@ final class BubblePanel: NSPanel {
         ignoresMouseEvents = false
         isReleasedWhenClosed = false
         bubbleView.onHover = { [weak self] inside in self?.bubbleHoverChanged(inside) }
+        accessibilityObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in MainActor.assumeIsolated { self?.refreshGlassAppearance() } }
+        // ponytail: 2-second glass preference latency; use a per-key notification if one becomes public.
+        glassSettingsTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                self.refreshGlassAppearance()
+            }
+        }
         orderOut(nil)
     }
 
@@ -244,28 +265,33 @@ final class BubblePanel: NSPanel {
         hoverCard.hide()
     }
 
+    private func refreshGlassAppearance() {
+        bubbleView.refreshGlassAppearance()
+        hoverCard.refreshGlassAppearance()
+        onGlassAppearanceRefresh?()
+    }
 }
 
 @MainActor
 private final class BubbleView: NSView {
     private let meters: UsageMetersView
-    private let background: PanelBackgroundView
+    private let backdrop: GlassBackdropView
     var onHover: ((Bool) -> Void)?
 
     override init(frame frameRect: NSRect) {
         let meters = UsageMetersView(frame: .zero)
         self.meters = meters
-        background = PanelBackgroundView(contentView: meters, cornerRadius: BubblePanel.dockPlateCornerRadius)
+        backdrop = GlassBackdropView(contentView: meters, cornerRadius: BubblePanel.dockPlateCornerRadius)
         super.init(frame: frameRect)
-        background.autoresizingMask = [.width, .height]
-        addSubview(background)
+        backdrop.autoresizingMask = [.width, .height]
+        addSubview(backdrop)
     }
 
     required init?(coder: NSCoder) { nil }
 
     override func layout() {
         super.layout()
-        background.frame = bounds
+        backdrop.frame = bounds
     }
 
     override func updateTrackingAreas() {
@@ -293,6 +319,8 @@ private final class BubbleView: NSView {
         meters.theme = theme
         meters.needsDisplay = true
     }
+
+    func refreshGlassAppearance() { backdrop.refreshAppearance() }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -477,6 +505,7 @@ private final class HoverCardPanel: NSPanel {
     }
 
     func update(_ readings: [UsageReading], theme: DocksideTheme) { cardView.update(readings, theme: theme) }
+    func refreshGlassAppearance() { cardView.refreshGlassAppearance() }
 
     func show() {
         orderFrontRegardless()
@@ -490,22 +519,22 @@ private final class HoverCardPanel: NSPanel {
 @MainActor
 private final class HoverCardView: NSView {
     private let rows: HoverCardRowsView
-    private let background: PanelBackgroundView
+    private let backdrop: GlassBackdropView
 
     override init(frame frameRect: NSRect) {
         let rows = HoverCardRowsView(frame: .zero)
         self.rows = rows
-        background = PanelBackgroundView(contentView: rows, cornerRadius: 14)
+        backdrop = GlassBackdropView(contentView: rows, cornerRadius: 14)
         super.init(frame: frameRect)
-        background.autoresizingMask = [.width, .height]
-        addSubview(background)
+        backdrop.autoresizingMask = [.width, .height]
+        addSubview(backdrop)
     }
 
     required init?(coder: NSCoder) { nil }
 
     override func layout() {
         super.layout()
-        background.frame = bounds
+        backdrop.frame = bounds
     }
 
     func update(_ readings: [UsageReading], theme: DocksideTheme) {
@@ -513,6 +542,8 @@ private final class HoverCardView: NSView {
         rows.theme = theme
         rows.needsDisplay = true
     }
+
+    func refreshGlassAppearance() { backdrop.refreshAppearance() }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
@@ -566,35 +597,128 @@ private final class HoverCardRowsView: NSView {
 }
 
 @MainActor
-final class PanelBackgroundView: NSView {
+final class GlassBackdropView: NSView {
     private let content: NSView
+    private let glassView: NSView?
+    private let glassContent = NSView()
+    private let legacyView = NSVisualEffectView(frame: .zero)
+    private let opaqueView: OpaqueBackdropView
     private let cornerRadius: CGFloat
+    private var lastTintedSetting: Bool?
+    private var lastIsDark: Bool?
+    private var lastReduceTransparency: Bool?
 
     init(contentView: NSView, cornerRadius: CGFloat) {
         content = contentView
         self.cornerRadius = cornerRadius
+        opaqueView = OpaqueBackdropView(cornerRadius: cornerRadius)
+        if #available(macOS 26.0, *) {
+            glassView = NSGlassEffectView(frame: .zero)
+        } else {
+            glassView = nil
+        }
         super.init(frame: .zero)
+        if let glassView {
+            glassContent.wantsLayer = true
+            glassContent.layer?.cornerRadius = cornerRadius
+            glassContent.layer?.masksToBounds = true
+            addSubview(glassView)
+        }
+        legacyView.material = .hudWindow
+        legacyView.blendingMode = .behindWindow
+        legacyView.state = .active
+        legacyView.wantsLayer = true
+        legacyView.layer?.masksToBounds = true
+        legacyView.layer?.cornerRadius = cornerRadius
+        addSubview(legacyView)
+        addSubview(opaqueView)
         addSubview(content)
+        refreshAppearance()
     }
 
     required init?(coder: NSCoder) { nil }
 
     override func layout() {
         super.layout()
+        glassView?.frame = bounds
+        glassContent.frame = bounds
+        legacyView.frame = bounds
+        opaqueView.frame = bounds
         content.frame = bounds
     }
 
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
-        needsDisplay = true
+        refreshAppearance()
         content.needsDisplay = true
     }
+
+    func refreshAppearance() {
+        let isTinted = UserDefaults.standard.bool(forKey: "NSGlassDiffusionSetting")
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        let reduceTransparency = NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
+        guard isTinted != lastTintedSetting || isDark != lastIsDark ||
+              reduceTransparency != lastReduceTransparency else { return }
+        lastTintedSetting = isTinted
+        lastIsDark = isDark
+        lastReduceTransparency = reduceTransparency
+
+        let chosen: NSView
+        if reduceTransparency {
+            chosen = opaqueView
+        } else if #available(macOS 26.0, *), let glassView {
+            chosen = glassView
+            configureGlass(glassView, isTinted: isTinted, isDark: isDark)
+        } else {
+            chosen = legacyView
+        }
+
+        if #available(macOS 26.0, *), let glass = glassView as? NSGlassEffectView {
+            glass.contentView = chosen === glass ? glassContent : nil
+        }
+        glassView?.isHidden = glassView !== chosen
+        legacyView.isHidden = legacyView !== chosen
+        opaqueView.isHidden = opaqueView !== chosen
+        needsLayout = true
+        opaqueView.needsDisplay = true
+    }
+
+    @available(macOS 26.0, *)
+    private func configureGlass(_ view: NSView, isTinted: Bool, isDark: Bool) {
+        guard let view = view as? NSGlassEffectView else { return }
+        view.style = isTinted ? .regular : .clear
+        view.tintColor = isTinted ? (isDark
+            ? NSColor.black.withAlphaComponent(BubblePanel.tintAlpha)
+            : NSColor.white.withAlphaComponent(BubblePanel.tintAlpha)) : nil
+        view.cornerRadius = cornerRadius
+        view.wantsLayer = true
+        glassContent.layer?.backgroundColor = !isTinted || !isDark ? nil
+            : NSColor.black.withAlphaComponent(BubblePanel.darkGlassVeilAlpha).cgColor
+        glassContent.layer?.borderWidth = isTinted ? 1 : 0
+        glassContent.layer?.borderColor = NSColor.white.withAlphaComponent(BubblePanel.glassRimAlpha).cgColor
+    }
+}
+
+@MainActor
+private final class OpaqueBackdropView: NSView {
+    private let cornerRadius: CGFloat
+
+    init(cornerRadius: CGFloat) {
+        self.cornerRadius = cornerRadius
+        super.init(frame: .zero)
+    }
+
+    required init?(coder: NSCoder) { nil }
 
     override func draw(_ dirtyRect: NSRect) {
         NSColor.windowBackgroundColor.setFill()
         NSBezierPath(roundedRect: bounds, xRadius: cornerRadius, yRadius: cornerRadius).fill()
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        needsDisplay = true
+    }
 }
 
 private func textSize(_ text: String, font: NSFont) -> NSSize {

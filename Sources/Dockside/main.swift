@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         stripPanel = DockStripPanel()
         panel.setTheme(selectedTheme)
         stripPanel.setTheme(selectedTheme)
+        panel.onGlassAppearanceRefresh = { [weak stripPanel = self.stripPanel] in
+            stripPanel?.refreshGlassAppearance()
+        }
         stripPanel.onInvoke = { [weak self] key in self?.buttonHost.invoke(key) }
         buttonHost = DockButtonHost { [weak self] buttons in self?.stripPanel.update(buttons) }
         usagePoller = UsagePoller { [weak self] readings in
