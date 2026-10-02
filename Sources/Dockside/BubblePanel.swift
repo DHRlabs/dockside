@@ -604,7 +604,6 @@ final class GlassBackdropView: NSView {
     private let legacyView = NSVisualEffectView(frame: .zero)
     private let opaqueView: OpaqueBackdropView
     private let cornerRadius: CGFloat
-    private var activeBackdrop: NSView?
     private var lastTintedSetting: Bool?
     private var lastIsDark: Bool?
     private var lastReduceTransparency: Bool?
@@ -633,6 +632,7 @@ final class GlassBackdropView: NSView {
         legacyView.layer?.cornerRadius = cornerRadius
         addSubview(legacyView)
         addSubview(opaqueView)
+        addSubview(content)
         refreshAppearance()
     }
 
@@ -644,7 +644,7 @@ final class GlassBackdropView: NSView {
         glassContent.frame = bounds
         legacyView.frame = bounds
         opaqueView.frame = bounds
-        content.frame = (activeBackdrop === glassView ? glassContent.bounds : activeBackdrop?.bounds) ?? bounds
+        content.frame = bounds
     }
 
     override func viewDidChangeEffectiveAppearance() {
@@ -673,18 +673,8 @@ final class GlassBackdropView: NSView {
             chosen = legacyView
         }
 
-        if activeBackdrop !== chosen {
-            if #available(macOS 26.0, *), let glass = glassView as? NSGlassEffectView {
-                glass.contentView = nil
-            }
-            content.removeFromSuperview()
-            if #available(macOS 26.0, *), let glass = chosen as? NSGlassEffectView {
-                glassContent.addSubview(content)
-                glass.contentView = glassContent
-            } else {
-                chosen.addSubview(content)
-            }
-            activeBackdrop = chosen
+        if #available(macOS 26.0, *), let glass = glassView as? NSGlassEffectView {
+            glass.contentView = chosen === glass ? glassContent : nil
         }
         glassView?.isHidden = glassView !== chosen
         legacyView.isHidden = legacyView !== chosen
