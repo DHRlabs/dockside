@@ -120,7 +120,10 @@ final class DockButtonHost {
         guard let provider = info["provider"] as? String,
               let session = info["providerSession"] as? String,
               UUID(uuidString: session) != nil, isRunning(provider) else { return }
-        guard !retiredProviderSessions[provider, default: []].contains(session) else { return }
+        if retiredProviderSessions[provider, default: []].contains(session) {
+            guard providerSessions[provider] == nil else { return }
+            retiredProviderSessions[provider]?.remove(session)
+        }
         if providerSessions[provider] != session {
             if providerSessions[provider] != nil { dropProvider(provider) }
             providerSessions[provider] = session
