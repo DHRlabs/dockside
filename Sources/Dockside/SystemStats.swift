@@ -74,6 +74,12 @@ private final class SystemStatsSampler: @unchecked Sendable {
     private var previousCPU: CPUCounters?
     private var previousGPU: (busy: UInt64, at: UInt64)?
     private var lastGPUPercent: Double?
+    // Share of each new reading blended in per sample: about a 6 second blend at the 2 s sample rate.
+    private static let smoothing = 0.3
+    private var smoothedCPU: Double?
+    private var smoothedGPU: Double?
+    private var smoothedMemory: Double?
+    private var smoothedTemperature: Double?
     private let temperatures = SMCTemperatureReader()
     private var hostPort: mach_port_t = 0
 
@@ -104,12 +110,18 @@ private final class SystemStatsSampler: @unchecked Sendable {
         if counters == nil { previousCPU = nil }
 
         return SystemStatsReading(
-            cpuPercent: cpuPercent,
-            gpuPercent: readGPUPercent(),
-            memoryPercent: readMemoryPercent(),
-            temperatureCelsius: temperatures.readAverageCPU(),
+            cpuPercent: smooth(cpuPercent, &smoothedCPU),
+            gpuPercent: smooth(readGPUPercent(), &smoothedGPU),
+            memoryPercent: smooth(readMemoryPercent(), &smoothedMemory),
+            temperatureCelsius: smooth(temperatures.readAverageCPU(), &smoothedTemperature),
             sampledAt: Date()
         )
+    }
+
+    // A missing reading keeps the last blended value; the first reading is taken as-is.
+    private func smooth(_ raw: Double?, _ previous: inout Double?) -> Double? {
+        if let raw, raw.isFinite { previous = previous.map { $0 + Self.smoothing * (raw - $0) } ?? raw }
+        return previous
     }
 
     private func readCPUCounters() -> CPUCounters? {
