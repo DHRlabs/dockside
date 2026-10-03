@@ -9,7 +9,7 @@ final class SystemStatsView: NSView {
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         setAccessibilityElement(true)
-        setAccessibilityLabel("CPU, RAM, and average CPU temperature")
+        setAccessibilityLabel("CPU, GPU, RAM, and average CPU temperature")
         updateAccessibilityValue()
     }
 
@@ -24,10 +24,10 @@ final class SystemStatsView: NSView {
     func width(for height: CGFloat, compact: Bool) -> CGFloat {
         guard height > 0 else { return 0 }
         switch (theme, compact) {
-        case (.glass, false), (.ticks, false): return height * 3.49
-        case (.glass, true), (.ticks, true): return height * 3.00
-        case (.pixel, false): return height * 3.96
-        case (.pixel, true): return height * 3.28
+        case (.glass, false), (.ticks, false): return height * 4.59
+        case (.glass, true), (.ticks, true): return height * 3.94
+        case (.pixel, false): return height * 5.19
+        case (.pixel, true): return height * 4.30
         }
     }
 
@@ -64,11 +64,15 @@ final class SystemStatsView: NSView {
     private func drawGlassMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
         let archWidth = compact ? min(height * 0.84, 46) : height * 0.92
         let cpuCenterX = bounds.minX + height * (compact ? 0.68 : 0.70)
-        let ramCenterX = bounds.minX + height * (compact ? 1.62 : 1.80)
-        let temperatureCenterX = bounds.minX + height * (compact ? 2.51 : 2.87)
+        let gpuCenterX = bounds.minX + height * (compact ? 1.62 : 1.80)
+        let ramCenterX = bounds.minX + height * (compact ? 2.56 : 2.90)
+        let temperatureCenterX = bounds.minX + height * (compact ? 3.45 : 3.97)
         let temperatureWidth = height * (compact ? 0.72 : 0.84)
 
         drawGlassUsageSemicircle(reading?.cpuPercent, label: "CPU", centerX: cpuCenterX,
+                                 outerWidth: archWidth, height: height, compact: compact,
+                                 accent: palette.accent, dark: dark)
+        drawGlassUsageSemicircle(reading?.gpuPercent, label: "GPU", centerX: gpuCenterX,
                                  outerWidth: archWidth, height: height, compact: compact,
                                  accent: palette.accent, dark: dark)
         drawGlassUsageSemicircle(reading?.memoryPercent, label: "RAM", centerX: ramCenterX,
@@ -166,13 +170,17 @@ final class SystemStatsView: NSView {
         trackColor(dark: dark).setFill()
         NSBezierPath(roundedRect: rect, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
         guard let value, value.isFinite else { return }
-        let fraction = CGFloat(min(1, max(0, value / 100)))
+        let fraction = CGFloat(min(1, max(0, value / SystemStatsTemperature.fullScale)))
         guard fraction > 0 else { return }
         let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * fraction, height: rect.height)
-        NSGraphicsContext.saveGraphicsState()
-        NSBezierPath(roundedRect: fill, xRadius: rect.height / 2, yRadius: rect.height / 2).addClip()
-        NSGradient(colors: [.systemGreen, .systemYellow, .systemRed])?.draw(in: rect, angle: 0)
-        NSGraphicsContext.restoreGraphicsState()
+        temperatureColor(value).setFill()
+        NSBezierPath(roundedRect: fill, xRadius: rect.height / 2, yRadius: rect.height / 2).fill()
+    }
+
+    private func temperatureColor(_ value: Double) -> NSColor {
+        let fraction = CGFloat(min(1, max(0, value / SystemStatsTemperature.fullScale)))
+        return NSGradient(colors: [.systemGreen, .systemYellow, .systemRed])?
+            .interpolatedColor(atLocation: fraction) ?? .systemGreen
     }
 
     private func drawGlassLabel(_ text: String, centerX: CGFloat, centerY: CGFloat,
@@ -206,9 +214,12 @@ final class SystemStatsView: NSView {
     private func drawPixelMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
         let archWidth = height * (compact ? 0.80 : 0.96)
         let cpuCenterX = bounds.minX + height * (compact ? 0.58 : 0.69)
-        let ramCenterX = bounds.minX + height * (compact ? 1.60 : 1.92)
-        let temperatureCenterX = bounds.minX + bounds.width * 0.84
+        let gpuCenterX = bounds.minX + height * (compact ? 1.60 : 1.92)
+        let ramCenterX = bounds.minX + height * (compact ? 2.62 : 3.15)
+        let temperatureCenterX = bounds.minX + bounds.width * 0.878
         drawPixelUsageArch(reading?.cpuPercent, label: "CPU", centerX: cpuCenterX,
+                           width: archWidth, height: height, accent: palette.accent, dark: dark)
+        drawPixelUsageArch(reading?.gpuPercent, label: "GPU", centerX: gpuCenterX,
                            width: archWidth, height: height, accent: palette.accent, dark: dark)
         drawPixelUsageArch(reading?.memoryPercent, label: "RAM", centerX: ramCenterX,
                            width: archWidth, height: height, accent: palette.warm, dark: dark)
@@ -285,7 +296,7 @@ final class SystemStatsView: NSView {
         var x = rect.midX - textWidth / 2
         let gridHeight = dot * 7 + spacing * 6
         let y = rect.midY - gridHeight / 2
-        let color = degrees == nil ? tertiaryColor(dark: dark) : primaryColor(dark: dark)
+        let color = degrees.map { temperatureColor(Double($0)) } ?? tertiaryColor(dark: dark)
         for (index, character) in digits.enumerated() {
             for (row, bits) in (Self.dotGlyphs[character] ?? Self.dotGlyphs["-"] ?? []).enumerated() {
                 for column in 0..<5 where bits & (1 << (4 - column)) != 0 {
@@ -323,7 +334,7 @@ final class SystemStatsView: NSView {
             guard let value, value.isFinite else { return "unavailable" }
             return "\(Int(value.rounded()))\(suffix)"
         }
-        setAccessibilityValue("CPU \(formatted(reading?.cpuPercent, suffix: "%")), RAM \(formatted(reading?.memoryPercent, suffix: "%")), average CPU temperature \(formatted(reading?.temperatureCelsius, suffix: " degrees Celsius"))")
+        setAccessibilityValue("CPU \(formatted(reading?.cpuPercent, suffix: "%")), GPU \(formatted(reading?.gpuPercent, suffix: "%")), RAM \(formatted(reading?.memoryPercent, suffix: "%")), average CPU temperature \(formatted(reading?.temperatureCelsius, suffix: " degrees Celsius"))")
     }
 
     private static let dotGlyphs: [Character: [UInt8]] = [

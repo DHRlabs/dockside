@@ -82,9 +82,9 @@ struct CompactLayoutCheck {
 
         let statsView = SystemStatsView(frame: .zero)
         for (theme, normalRatio, compactRatio) in [
-            (DocksideTheme.glass, 3.49, 3.00),
-            (DocksideTheme.pixel, 3.96, 3.28),
-            (DocksideTheme.ticks, 3.49, 3.00)
+            (DocksideTheme.glass, 4.59, 3.94),
+            (DocksideTheme.pixel, 5.19, 4.30),
+            (DocksideTheme.ticks, 4.59, 3.94)
         ] {
             statsView.setTheme(theme)
             for height: CGFloat in [40, 58, 100] {
