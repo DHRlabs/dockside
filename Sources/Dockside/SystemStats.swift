@@ -4,17 +4,20 @@ import IOKit
 
 public struct SystemStatsReading: Sendable {
     public var cpuPercent: Double?
+    public var gpuPercent: Double?
     public var memoryPercent: Double?
     public var temperatureCelsius: Double?
     public var sampledAt: Date
 
     public init(
         cpuPercent: Double? = nil,
+        gpuPercent: Double? = nil,
         memoryPercent: Double? = nil,
         temperatureCelsius: Double? = nil,
         sampledAt: Date = Date()
     ) {
         self.cpuPercent = Self.percentage(cpuPercent)
+        self.gpuPercent = Self.percentage(gpuPercent)
         self.memoryPercent = Self.percentage(memoryPercent)
         self.temperatureCelsius = temperatureCelsius
         self.sampledAt = sampledAt
@@ -69,6 +72,8 @@ private struct CPUCounters {
 // All sampler state is confined to the poller's serial sampling queue.
 private final class SystemStatsSampler: @unchecked Sendable {
     private var previousCPU: CPUCounters?
+    private var previousGPU: (busy: UInt64, at: UInt64)?
+    private var lastGPUPercent: Double?
     private let temperatures = SMCTemperatureReader()
     private var hostPort: mach_port_t = 0
 
@@ -100,6 +105,7 @@ private final class SystemStatsSampler: @unchecked Sendable {
 
         return SystemStatsReading(
             cpuPercent: cpuPercent,
+            gpuPercent: readGPUPercent(),
             memoryPercent: readMemoryPercent(),
             temperatureCelsius: temperatures.readAverageCPU(),
             sampledAt: Date()
@@ -133,6 +139,42 @@ private final class SystemStatsSampler: @unchecked Sendable {
         return CPUCounters(states: states)
     }
 
+    // Total GPU time every app has used so far, in nanoseconds, from the accelerator's per-app counters.
+    private func readGPUBusyNanoseconds() -> UInt64? {
+        var accelerators: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("AGXAccelerator"), &accelerators) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(accelerators) }
+        var total: UInt64 = 0
+        var found = false
+        var accelerator = IOIteratorNext(accelerators)
+        while accelerator != 0 {
+            defer { IOObjectRelease(accelerator); accelerator = IOIteratorNext(accelerators) }
+            var children: io_iterator_t = 0
+            guard IORegistryEntryCreateIterator(accelerator, kIOServicePlane, IOOptionBits(kIORegistryIterateRecursively), &children) == KERN_SUCCESS else { continue }
+            defer { IOObjectRelease(children) }
+            var child = IOIteratorNext(children)
+            while child != 0 {
+                defer { IOObjectRelease(child); child = IOIteratorNext(children) }
+                let property = IORegistryEntryCreateCFProperty(child, "AppUsage" as CFString, kCFAllocatorDefault, 0)
+                guard let apps = property?.takeRetainedValue() as? [[String: Any]] else { continue }
+                found = true
+                for app in apps { total &+= (app["accumulatedGPUTime"] as? NSNumber)?.uint64Value ?? 0 }
+            }
+        }
+        return found ? total : nil
+    }
+
+    // ponytail: an app exiting drops its counter; that sample repeats the last percent instead of blanking.
+    private func readGPUPercent() -> Double? {
+        let now = DispatchTime.now().uptimeNanoseconds
+        guard let busy = readGPUBusyNanoseconds() else { previousGPU = nil; return nil }
+        defer { previousGPU = (busy, now) }
+        guard let previousGPU, now > previousGPU.at else { return nil }
+        guard busy >= previousGPU.busy else { return lastGPUPercent }
+        lastGPUPercent = 100 * Double(busy - previousGPU.busy) / Double(now - previousGPU.at)
+        return lastGPUPercent
+    }
+
     private func readMemoryPercent() -> Double? {
         var stats = vm_statistics64_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
@@ -153,8 +195,11 @@ private final class SystemStatsSampler: @unchecked Sendable {
 }
 
 enum SystemStatsTemperature {
+    // Highest sensor value the reader keeps; also the full scale of the temperature bar.
+    static let fullScale: Double = 120
+
     static func average(_ values: [Double]) -> Double? {
-        let usable = values.filter { $0.isFinite && $0 > 0 && $0 < 120 }
+        let usable = values.filter { $0.isFinite && $0 > 0 && $0 < fullScale }
         guard !usable.isEmpty else { return nil }
         return usable.reduce(0, +) / Double(usable.count)
     }
@@ -173,7 +218,7 @@ enum SystemStatsTemperature {
         default:
             return nil
         }
-        guard value.isFinite, value > 0, value < 120 else { return nil }
+        guard value.isFinite, value > 0, value < fullScale else { return nil }
         return value
     }
 }
