@@ -22,8 +22,8 @@ struct UsageReading {
     }
 
     func isFresh(at now: Date = Date()) -> Bool {
-        guard isCurrent(at: now), let observedAt else { return false }
-        return now.timeIntervalSince(observedAt) <= 15 * 60
+        guard isCurrent(at: now), let observedAt, let resetsAt else { return false }
+        return now.timeIntervalSince(observedAt) <= resetsAt.timeIntervalSince(now)
     }
 
     func share(at now: Date = Date()) -> Double? {
