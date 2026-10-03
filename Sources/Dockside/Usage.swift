@@ -17,7 +17,12 @@ struct UsageReading {
 
     func isCurrent(at now: Date = Date()) -> Bool {
         guard stateIsOK, let used, used.isFinite, let resetsAt, resetsAt > now,
-              let observedAt else { return false }
+              observedAt != nil else { return false }
+        return true
+    }
+
+    func isFresh(at now: Date = Date()) -> Bool {
+        guard isCurrent(at: now), let observedAt else { return false }
         return now.timeIntervalSince(observedAt) <= 15 * 60
     }
 
@@ -99,7 +104,8 @@ final class UsagePoller {
             case .readings(let readings):
                 claudeReadings = readings
             case .unavailable:
-                claudeReadings = Self.emptyClaude
+                // ponytail: reader scans only the newest 400 cache entries, so a fresh launch after long idle can start blank until Claude is used.
+                break
             }
             publish()
             claudeTimer?.invalidate()

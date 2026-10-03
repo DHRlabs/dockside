@@ -424,7 +424,7 @@ private final class UsageMetersView: NSView {
                      in: NSRect(x: cell.minX, y: nameY, width: cell.width, height: nameHeight),
                      font: nameFont, color: meterSecondaryLabelColor(isDark: isDark), alignment: .center)
             let percentage = reading.percentageText(at: now)
-            let percentageColor = reading.share(at: now) == nil
+            let percentageColor = !reading.isFresh(at: now)
                 ? meterTertiaryLabelColor(isDark: isDark) : fillColor(for: reading.provider)
             drawText(percentage,
                      in: NSRect(x: cell.minX, y: percentY, width: cell.width, height: percentHeight),
@@ -434,12 +434,14 @@ private final class UsageMetersView: NSView {
             let bar = NSRect(x: cell.midX - barWidth / 2, y: verticalInset,
                              width: barWidth, height: barHeight)
             let share = reading.share(at: now) ?? 0
+            let filledColor = reading.isFresh(at: now)
+                ? fillColor(for: reading.provider) : meterTertiaryLabelColor(isDark: isDark)
             for segmentIndex in 0..<segmentCount {
                 let segment = NSRect(x: bar.minX,
                                      y: bar.minY + CGFloat(segmentIndex) * (segmentHeight + segmentGap),
                                      width: bar.width, height: segmentHeight)
                 let color = CGFloat(segmentIndex) < share * CGFloat(segmentCount)
-                    ? fillColor(for: reading.provider) : meterTrackColor(isDark: isDark)
+                    ? filledColor : meterTrackColor(isDark: isDark)
                 color.setFill()
                 if theme == .pixel || theme == .ticks {
                     segment.fill()
@@ -757,7 +759,7 @@ private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: 
     drawText(percent,
              in: NSRect(x: percentX, y: rect.minY, width: percentWidth, height: rect.height),
              font: fonts.percent,
-             color: reading.share(at: now) == nil ? meterTertiaryLabelColor(isDark: isDark) : nameColor,
+             color: !reading.isFresh(at: now) ? meterTertiaryLabelColor(isDark: isDark) : nameColor,
              alignment: .right)
 
     if showReset, let reset = reading.resetLine(at: now) {
@@ -777,6 +779,8 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
                        dockHeight: CGFloat, isDark: Bool, theme: DocksideTheme = .glass) {
     guard rect.width > 0, rect.height > 0 else { return }
     let share = reading.share(at: now)
+    let filledColor = reading.isFresh(at: now)
+        ? fillColor(for: reading.provider) : meterTertiaryLabelColor(isDark: isDark)
     if theme == .pixel || theme == .ticks {
         let gap = max(0.7, rect.height * 0.24)
         let count = max(1, Int(rect.width / (rect.height * 1.65)))
@@ -786,7 +790,7 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
             let segment = NSRect(x: rect.minX + CGFloat(index) * (segmentWidth + gap), y: rect.minY,
                                  width: segmentWidth, height: rect.height)
             (CGFloat(index) < filledSegments
-             ? fillColor(for: reading.provider) : meterTrackColor(isDark: isDark)).setFill()
+             ? filledColor : meterTrackColor(isDark: isDark)).setFill()
             segment.fill()
         }
     } else {
@@ -797,7 +801,7 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
             let fill = NSRect(x: rect.minX, y: rect.minY, width: rect.width * share, height: rect.height)
             NSGraphicsContext.saveGraphicsState()
             track.addClip()
-            fillColor(for: reading.provider).setFill()
+            filledColor.setFill()
             fill.fill()
             NSGraphicsContext.restoreGraphicsState()
         }
