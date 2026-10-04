@@ -9,7 +9,7 @@ enum DocksideTheme: String {
 @MainActor
 final class BubblePanel: NSPanel {
     static let dockGap: CGFloat = 8
-    // Measured on a test Mac: AX list top y 1372, Dock plate top y 1377, with 44-point icons.
+    // Measured with a 44-point bottom Dock: AX list top y 1372, Dock plate top y 1377.
     static let dockPlateVerticalCalibration: CGFloat = 5
     // Picked to match the corner curvature of the 58-point Tahoe Dock plate.
     static let dockPlateCornerRadius: CGFloat = 15

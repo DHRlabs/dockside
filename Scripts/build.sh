@@ -15,6 +15,20 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
 cp ".build/release/$BIN" "$APP/Contents/MacOS/$BIN"
 
+ICON_KEY=""
+if [ -f docs/logo.png ]; then
+    echo "Making app icon…"
+    ICON_TMP="$(mktemp -d)"
+    mkdir -p "$ICON_TMP/AppIcon.iconset" "$APP/Contents/Resources"
+    for size in 16 32 128 256 512; do
+        sips -z "$size" "$size" docs/logo.png --out "$ICON_TMP/AppIcon.iconset/icon_${size}x${size}.png" >/dev/null
+        sips -z "$((size * 2))" "$((size * 2))" docs/logo.png --out "$ICON_TMP/AppIcon.iconset/icon_${size}x${size}@2x.png" >/dev/null
+    done
+    iconutil -c icns "$ICON_TMP/AppIcon.iconset" -o "$APP/Contents/Resources/AppIcon.icns"
+    rm -rf "$ICON_TMP"
+    ICON_KEY="<key>CFBundleIconFile</key>            <string>AppIcon</string>"
+fi
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -23,6 +37,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
     <key>CFBundleName</key>                <string>Dockside</string>
     <key>CFBundleDisplayName</key>         <string>Dockside</string>
     <key>CFBundleExecutable</key>          <string>$BIN</string>
+    $ICON_KEY
     <key>CFBundleIdentifier</key>          <string>$BUNDLE_ID</string>
     <key>CFBundleVersion</key>             <string>$VERSION</string>
     <key>CFBundleShortVersionString</key>  <string>$VERSION</string>
