@@ -1,7 +1,9 @@
 .build/
 build/
+.swiftpm/
 .DS_Store
 .env*
 *.pem
 *.key
-.swiftpm/
+*.dmg
+AGENTS.md

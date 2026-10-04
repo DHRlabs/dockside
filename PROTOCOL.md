@@ -1,8 +1,7 @@
 # Dockside button strip protocol, version 1
 
 Other apps put buttons in Dockside's strip at the right end of the Dock. Dockside draws and places the buttons and
-handles clicks; the app that registered a button owns what it does and its state. Decision record: Dockside
-ADR-001 in DHRvault.
+handles clicks; the app that registered a button owns what it does and its state.
 
 ## Transport
 

@@ -76,8 +76,7 @@ final class UsagePoller {
     private var claudeTask: Task<Void, Never>?
     private var feedTask: Task<Void, Never>?
     private var claudeReadings: [UsageReading]
-    private var codexReadings = [UsageReading.empty("Codex", provider: .codex)]
-    private var grokReading = UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
+    private var feedReadings: [UsageReading] = []
 
     private static let emptyClaude = [
         UsageReading.empty("Claude 5h", provider: .claude, duration: 5 * 3600),
@@ -118,12 +117,16 @@ final class UsagePoller {
     private func fetchFeed() {
         guard feedTask == nil else { return }
         feedTask = Task {
-            if let accounts = await UsageClient.fetchFeed() {
-                codexReadings = UsageClient.codexReadings(from: accounts)
-                grokReading = UsageClient.grokReading(from: accounts)
+            if let url = UsageClient.feedURL {
+                if let accounts = await UsageClient.fetchFeed(from: url) {
+                    feedReadings = UsageClient.codexReadings(from: accounts)
+                        + [UsageClient.grokReading(from: accounts)]
+                } else {
+                    feedReadings = [UsageReading.empty("Codex", provider: .codex),
+                                    UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)]
+                }
             } else {
-                codexReadings = [UsageReading.empty("Codex", provider: .codex)]
-                grokReading = UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
+                feedReadings = []
             }
             feedTask = nil
             publish()
@@ -135,7 +138,7 @@ final class UsagePoller {
     }
 
     private func publish() {
-        onReadings(claudeReadings + codexReadings + [grokReading])
+        onReadings(claudeReadings + feedReadings)
     }
 }
 
@@ -145,7 +148,14 @@ private enum UsageClient {
         case unavailable
     }
 
-    private static let feedEndpoint = URL(string: "https://crons.dhrlabs.com/api/account-usage.json")!
+    /// Optional Codex and Grok feed, set with `defaults write com.dhrlabs.dockside UsageFeedURL <url>`.
+    static var feedURL: URL? {
+        guard let text = UserDefaults.standard.string(forKey: "UsageFeedURL"),
+              let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              url.host?.isEmpty == false else { return nil }
+        return url
+    }
 
     static func fetchClaude() async -> ClaudeResult {
         let scan = await Task.detached(priority: .utility) {
@@ -160,8 +170,8 @@ private enum UsageClient {
         ])
     }
 
-    static func fetchFeed() async -> [FeedAccount]? {
-        guard let (data, response) = try? await URLSession.shared.data(from: feedEndpoint),
+    static func fetchFeed(from url: URL) async -> [FeedAccount]? {
+        guard let (data, response) = try? await URLSession.shared.data(from: url),
               (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) == true,
               let feed = try? JSONDecoder().decode(UsageFeed.self, from: data)
         else { return nil }

@@ -9,7 +9,7 @@ enum DocksideTheme: String {
 @MainActor
 final class BubblePanel: NSPanel {
     static let dockGap: CGFloat = 8
-    // Measured on Lance's Mac: AX list top y 1372, Dock plate top y 1377, with 44-point icons.
+    // Measured with a 44-point bottom Dock: AX list top y 1372, Dock plate top y 1377.
     static let dockPlateVerticalCalibration: CGFloat = 5
     // Picked to match the corner curvature of the 58-point Tahoe Dock plate.
     static let dockPlateCornerRadius: CGFloat = 15
@@ -17,7 +17,7 @@ final class BubblePanel: NSPanel {
     fileprivate static let horizontalInsetRatio: CGFloat = 0.28
     fileprivate static let compactWidthCap: CGFloat = 216
     fileprivate static let compactMinimumWidth: CGFloat = 180
-    // Lance's dark-mode Dock plate calibration: black tint over regular glass.
+    // Dark-mode Dock plate calibration: black tint over regular glass.
     static let tintAlpha: CGFloat = 0.55
     // Measured black veil compensating for NSGlassEffectView's brighter black tint.
     static let darkGlassVeilAlpha: CGFloat = 0.70
