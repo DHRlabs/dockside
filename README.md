@@ -128,4 +128,4 @@ checks compact-layout geometry.
 
 The pace math and the Claude desktop usage read are adapted from [Codenotch](https://github.com/vinzdg/codenotch) by vinzdg (MIT). The temperature reader and memory accounting are adapted from [Stats](https://github.com/exelban/stats) by Serhiy Mytrovtsiy (MIT). See [NOTICE](NOTICE) for details.
 
-Dockside is licensed under the [MIT License](LICENSE).
+Dockside is licensed under the [GNU General Public License v3.0](LICENSE). The adapted MIT code keeps its MIT notices in NOTICE.
