@@ -424,8 +424,7 @@ private final class UsageMetersView: NSView {
                      in: NSRect(x: cell.minX, y: nameY, width: cell.width, height: nameHeight),
                      font: nameFont, color: meterSecondaryLabelColor(isDark: isDark), alignment: .center)
             let percentage = reading.percentageText(at: now)
-            let percentageColor = !reading.isFresh(at: now)
-                ? meterTertiaryLabelColor(isDark: isDark) : fillColor(for: reading.provider)
+            let percentageColor = fillColor(for: reading.provider)
             drawText(percentage,
                      in: NSRect(x: cell.minX, y: percentY, width: cell.width, height: percentHeight),
                      font: percentFont, color: percentageColor, alignment: .center)
@@ -434,8 +433,7 @@ private final class UsageMetersView: NSView {
             let bar = NSRect(x: cell.midX - barWidth / 2, y: verticalInset,
                              width: barWidth, height: barHeight)
             let share = reading.share(at: now) ?? 0
-            let filledColor = reading.isFresh(at: now)
-                ? fillColor(for: reading.provider) : meterTertiaryLabelColor(isDark: isDark)
+            let filledColor = fillColor(for: reading.provider)
             for segmentIndex in 0..<segmentCount {
                 let segment = NSRect(x: bar.minX,
                                      y: bar.minY + CGFloat(segmentIndex) * (segmentHeight + segmentGap),
@@ -455,13 +453,6 @@ private final class UsageMetersView: NSView {
                 let tickHeight = min(2, max(1, segmentHeight * 0.7))
                 let y = min(bar.maxY - tickHeight, max(bar.minY, bar.minY + bar.height * pace - tickHeight / 2))
                 let tick = NSRect(x: bar.minX, y: y, width: bar.width, height: tickHeight)
-                if case .grok = reading.provider {
-                    let underlayMinY = max(bar.minY, tick.minY - 0.75)
-                    let underlayMaxY = min(bar.maxY, tick.maxY + 0.75)
-                    (isDark ? NSColor.black : NSColor.white).withAlphaComponent(0.65).setFill()
-                    NSRect(x: bar.minX, y: underlayMinY, width: bar.width,
-                           height: max(0, underlayMaxY - underlayMinY)).fill()
-                }
                 (isDark ? NSColor.white : NSColor.labelColor).setFill()
                 tick.fill()
             }
@@ -759,7 +750,7 @@ private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: 
     drawText(percent,
              in: NSRect(x: percentX, y: rect.minY, width: percentWidth, height: rect.height),
              font: fonts.percent,
-             color: !reading.isFresh(at: now) ? meterTertiaryLabelColor(isDark: isDark) : nameColor,
+             color: nameColor,
              alignment: .right)
 
     if showReset, let reset = reading.resetLine(at: now) {
@@ -779,8 +770,7 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
                        dockHeight: CGFloat, isDark: Bool, theme: DocksideTheme = .glass) {
     guard rect.width > 0, rect.height > 0 else { return }
     let share = reading.share(at: now)
-    let filledColor = reading.isFresh(at: now)
-        ? fillColor(for: reading.provider) : meterTertiaryLabelColor(isDark: isDark)
+    let filledColor = fillColor(for: reading.provider)
     if theme == .pixel || theme == .ticks {
         let gap = max(0.7, rect.height * 0.24)
         let count = max(1, Int(rect.width / (rect.height * 1.65)))
@@ -812,10 +802,6 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
         let tick = NSRect(x: rect.minX + rect.width * pace - tickWidth / 2,
                           y: rect.minY - tickExtension,
                           width: tickWidth, height: rect.height + 2 * tickExtension)
-        if case .grok = reading.provider {
-            (isDark ? NSColor.black : NSColor.white).withAlphaComponent(0.65).setFill()
-            NSRect(x: tick.minX - 0.75, y: rect.minY, width: tick.width + 1.5, height: rect.height).fill()
-        }
         (isDark ? NSColor.white : NSColor.labelColor).setFill()
         tick.fill()
     }
@@ -825,7 +811,6 @@ private func fillColor(for provider: UsageReading.Provider) -> NSColor {
     switch provider {
     case .claude: return NSColor(srgbRed: 217.0 / 255, green: 119.0 / 255, blue: 87.0 / 255, alpha: 1)
     case .codex: return NSColor(srgbRed: 63.0 / 255, green: 191.0 / 255, blue: 178.0 / 255, alpha: 1)
-    case .grok: return .labelColor
     }
 }
 

@@ -4,7 +4,6 @@ struct UsageReading {
     enum Provider {
         case claude
         case codex
-        case grok
     }
 
     let label: String
@@ -19,11 +18,6 @@ struct UsageReading {
         guard stateIsOK, let used, used.isFinite, let resetsAt, resetsAt > now,
               observedAt != nil else { return false }
         return true
-    }
-
-    func isFresh(at now: Date = Date()) -> Bool {
-        guard isCurrent(at: now), let observedAt, let resetsAt else { return false }
-        return now.timeIntervalSince(observedAt) <= resetsAt.timeIntervalSince(now)
     }
 
     func share(at now: Date = Date()) -> Double? {
@@ -79,7 +73,6 @@ final class UsagePoller {
     private var feedReadings: [UsageReading] = []
 
     private static let emptyClaude = [
-        UsageReading.empty("Claude 5h", provider: .claude, duration: 5 * 3600),
         UsageReading.empty("Claude", provider: .claude, duration: 7 * 86400)
     ]
 
@@ -120,10 +113,8 @@ final class UsagePoller {
             if let url = UsageClient.feedURL {
                 if let accounts = await UsageClient.fetchFeed(from: url) {
                     feedReadings = UsageClient.codexReadings(from: accounts)
-                        + [UsageClient.grokReading(from: accounts)]
                 } else {
-                    feedReadings = [UsageReading.empty("Codex", provider: .codex),
-                                    UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)]
+                    feedReadings = [UsageReading.empty("Codex", provider: .codex)]
                 }
             } else {
                 feedReadings = []
@@ -148,7 +139,7 @@ private enum UsageClient {
         case unavailable
     }
 
-    /// Optional Codex and Grok feed, set with `defaults write com.dhrlabs.dockside UsageFeedURL <url>`.
+    /// Optional Codex feed, set with `defaults write com.dhrlabs.dockside UsageFeedURL <url>`.
     static var feedURL: URL? {
         guard let text = UserDefaults.standard.string(forKey: "UsageFeedURL"),
               let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
@@ -162,12 +153,15 @@ private enum UsageClient {
             ClaudeDesktopUsageCache().read()
         }.value
         guard let cached = scan.reading else { return .unavailable }
-        return .readings([
-            claudeReading(cached.response.fiveHour, label: "Claude 5h",
-                          duration: 5 * 3600, observedAt: cached.savedAt),
-            claudeReading(cached.response.sevenDay, label: "Claude",
-                          duration: 7 * 86400, observedAt: cached.savedAt)
-        ])
+        // Accounts without a five-hour limit (Max) send no five_hour window; show no 5h meter for them.
+        var readings: [UsageReading] = []
+        if let fiveHour = cached.response.fiveHour {
+            readings.append(claudeReading(fiveHour, label: "Claude 5h",
+                                          duration: 5 * 3600, observedAt: cached.savedAt))
+        }
+        readings.append(claudeReading(cached.response.sevenDay, label: "Claude",
+                                      duration: 7 * 86400, observedAt: cached.savedAt))
+        return .readings(readings)
     }
 
     static func fetchFeed(from url: URL) async -> [FeedAccount]? {
@@ -201,15 +195,6 @@ private enum UsageClient {
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
                          stateIsOK: account.state == "ok")
         }
-    }
-
-    static func grokReading(from accounts: [FeedAccount]) -> UsageReading {
-        guard let account = accounts.first(where: { $0.name == "Grok" }),
-              let window = account.windows?.first(where: { $0.label == "week" })
-        else { return .empty("Grok", provider: .grok, duration: 7 * 86400) }
-        return UsageReading(label: "Grok", provider: .grok, duration: 7 * 86400,
-                            used: window.used.map(Double.init), resetsAt: parseDate(window.resetsAt),
-                            observedAt: parseDate(account.at), stateIsOK: account.state == "ok")
     }
 
     private static func claudeReading(

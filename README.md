@@ -16,10 +16,9 @@ It is a native macOS app. No menu bar icon, no Dock icon, no windows to manage.
 
 <img src="docs/usage.png" alt="AI usage meters" width="520">
 
-- **Claude** 5-hour and weekly usage, each with a pace line showing whether you are ahead or behind, and a countdown to reset.
-- **Codex** and **Grok** usage from an optional feed you point it at (see below). Without a feed those meters are simply not shown.
+- **Claude** 5-hour and weekly usage, each with a pace line showing whether you are ahead or behind, and a countdown to reset. Plans with no 5-hour limit show only the weekly meter.
+- **Codex** usage from an optional feed you point it at (see below). Without a feed that meter is simply not shown.
 - Hover for 0.3 seconds for details, such as "14% under pace".
-- A reading that has gone stale turns gray instead of showing a number you can no longer trust.
 
 ### System stats
 
@@ -72,7 +71,7 @@ To make a DMG yourself: `bash Scripts/package-dmg.sh <version>` writes `build/Do
 - CPU, GPU, and RAM come from system counters. Temperature uses CPU sensor keys verified on Apple M5; other hardware may show `--`.
 - Accessibility is the only permission Dockside needs.
 
-### Optional Codex and Grok feed
+### Optional Codex feed
 
 Point Dockside at a JSON feed you host:
 
@@ -95,22 +94,14 @@ Dockside reads the feed once a minute. The shape it expects:
         { "label": "5 hours", "used": 42, "resetsAt": "2026-01-01T15:00:00Z" },
         { "label": "week", "used": 17, "resetsAt": "2026-01-05T00:00:00Z" }
       ]
-    },
-    {
-      "name": "Grok",
-      "state": "ok",
-      "at": "2026-01-01T12:00:00Z",
-      "windows": [
-        { "label": "week", "used": 8, "resetsAt": "2026-01-05T00:00:00Z" }
-      ]
     }
   ]
 }
 ```
 
-- `name` is `Codex` or `Grok`. `state` must be `ok` for the reading to count.
+- `name` is `Codex`; other accounts are ignored. `state` must be `ok` for the reading to count.
 - `at` is when the numbers were taken. `used` is a whole-number percent. `resetsAt` is when the window resets. Dates are ISO 8601.
-- Codex uses the `5 hours` and `week` windows. Grok uses `week`.
+- Codex uses the `5 hours` and `week` windows.
 
 ## Buttons from other apps
 
