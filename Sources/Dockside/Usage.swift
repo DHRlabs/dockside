@@ -4,6 +4,8 @@ struct UsageReading {
     enum Provider {
         case claude
         case codex
+        /// Any other feed account; `colorHex` is the optional "#RRGGBB" the feed gave it.
+        case feed(colorHex: String?)
     }
 
     let label: String
@@ -111,10 +113,11 @@ final class UsagePoller {
         guard feedTask == nil else { return }
         feedTask = Task {
             if let url = UsageClient.feedURL {
+                let names = UsageClient.feedAccountNames
                 if let accounts = await UsageClient.fetchFeed(from: url) {
-                    feedReadings = UsageClient.codexReadings(from: accounts)
+                    feedReadings = UsageClient.feedReadings(from: accounts, names: names)
                 } else {
-                    feedReadings = [UsageReading.empty("Codex", provider: .codex)]
+                    feedReadings = UsageClient.feedReadings(from: [], names: names)
                 }
             } else {
                 feedReadings = []
@@ -172,9 +175,27 @@ private enum UsageClient {
         return feed.accounts
     }
 
-    static func codexReadings(from accounts: [FeedAccount]) -> [UsageReading] {
-        guard let account = accounts.first(where: { $0.name == "Codex" }) else {
-            return [UsageReading.empty("Codex", provider: .codex)]
+    /// Feed accounts to show, in order, from `defaults write com.dhrlabs.dockside UsageFeedAccounts "Codex,Work"`.
+    static var feedAccountNames: [String] {
+        accountNames(from: UserDefaults.standard.string(forKey: "UsageFeedAccounts"))
+    }
+
+    static func accountNames(from text: String?) -> [String] {
+        let names = (text ?? "").split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return names.isEmpty ? ["Codex"] : names
+    }
+
+    static func feedReadings(from accounts: [FeedAccount], names: [String]) -> [UsageReading] {
+        names.flatMap { readings(from: accounts, name: $0) }
+    }
+
+    private static func readings(from accounts: [FeedAccount], name: String) -> [UsageReading] {
+        let provider: UsageReading.Provider = name == "Codex"
+            ? .codex : .feed(colorHex: accounts.first(where: { $0.name == name })?.color)
+        guard let account = accounts.first(where: { $0.name == name }) else {
+            return [UsageReading.empty(name, provider: provider)]
         }
         let observedAt = parseDate(account.at)
         let windows = (account.windows ?? []).compactMap { window -> (FeedWindow, TimeInterval)? in
@@ -186,11 +207,11 @@ private enum UsageClient {
         }.sorted { $0.0.label == "5 hours" && $1.0.label != "5 hours" }
 
         guard !windows.isEmpty else {
-            return [UsageReading.empty("Codex", provider: .codex)]
+            return [UsageReading.empty(name, provider: provider)]
         }
         return windows.map { window, duration in
-            let label = window.label == "5 hours" ? "Codex 5h" : "Codex"
-            return UsageReading(label: label, provider: .codex,
+            let label = window.label == "5 hours" ? "\(name) 5h" : name
+            return UsageReading(label: label, provider: provider,
                          duration: duration, used: window.used.map(Double.init),
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
                          stateIsOK: account.state == "ok")
@@ -224,7 +245,24 @@ struct FeedAccount: Decodable {
     let name: String?
     let state: String?
     let at: String?
+    /// Optional "#RRGGBB" meter color for accounts other than Codex.
+    /// A color that is not a string decodes as absent so one odd account
+    /// never keeps the rest of the feed from decoding.
+    let color: String?
     let windows: [FeedWindow]?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, state, at, color, windows
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+        at = try container.decodeIfPresent(String.self, forKey: .at)
+        color = try? container.decodeIfPresent(String.self, forKey: .color)
+        windows = try container.decodeIfPresent([FeedWindow].self, forKey: .windows)
+    }
 }
 
 struct FeedWindow: Decodable {

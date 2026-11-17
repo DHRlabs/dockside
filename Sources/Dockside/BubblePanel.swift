@@ -16,6 +16,7 @@ final class BubblePanel: NSPanel {
     fileprivate static let meterGapRatio: CGFloat = 0.25
     fileprivate static let horizontalInsetRatio: CGFloat = 0.28
     fileprivate static let compactWidthCap: CGFloat = 216
+    fileprivate static let compactCellWidth: CGFloat = 44
     fileprivate static let compactMinimumWidth: CGFloat = 180
     // Dark-mode Dock plate calibration: black tint over regular glass.
     static let tintAlpha: CGFloat = 0.55
@@ -103,13 +104,22 @@ final class BubblePanel: NSPanel {
         let requiredMinimum = minimumWidth ?? compactMinimumWidth
         guard count > 0, available.isFinite, requiredMinimum.isFinite,
               available >= requiredMinimum, requiredMinimum > 0 else { return nil }
-        let width = min(compactWidthCap, available)
         let inset: CGFloat = 8
-        let innerWidth = width - 2 * inset
         let gap: CGFloat = count > 1 ? 8 : 0
+        // Keep the four-meter cell width as the count grows: 216 up to four, then wider.
+        let cap = max(compactWidthCap,
+                      2 * inset + CGFloat(count) * compactCellWidth + CGFloat(count - 1) * 8)
+        let width = min(cap, available)
+        let innerWidth = width - 2 * inset
         let meterWidth = (innerWidth - gap * CGFloat(count - 1)) / CGFloat(count)
         guard meterWidth > 0 else { return nil }
         return (inset, gap, meterWidth, width)
+    }
+
+    // Compact cells are narrow, so every five-hour meter is just "5h"; the weekly
+    // meter beside it carries the account name and the color ties the pair together.
+    fileprivate static func compactName(for label: String) -> String {
+        label.hasSuffix(" 5h") ? "5h" : label
     }
 
     private let bubbleView = BubbleView()
@@ -419,7 +429,7 @@ private final class UsageMetersView: NSView {
         for (index, reading) in readings.enumerated() {
             let cellX = layout.inset + CGFloat(index) * (layout.meterWidth + layout.gap)
             let cell = NSRect(x: cellX, y: 0, width: layout.meterWidth, height: height)
-            let name = reading.label == "Claude 5h" ? "5h" : reading.label
+            let name = BubblePanel.compactName(for: reading.label)
             drawText(name,
                      in: NSRect(x: cell.minX, y: nameY, width: cell.width, height: nameHeight),
                      font: nameFont, color: meterSecondaryLabelColor(isDark: isDark), alignment: .center)
@@ -807,11 +817,23 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
     }
 }
 
-private func fillColor(for provider: UsageReading.Provider) -> NSColor {
+func fillColor(for provider: UsageReading.Provider) -> NSColor {
     switch provider {
     case .claude: return NSColor(srgbRed: 217.0 / 255, green: 119.0 / 255, blue: 87.0 / 255, alpha: 1)
     case .codex: return NSColor(srgbRed: 63.0 / 255, green: 191.0 / 255, blue: 178.0 / 255, alpha: 1)
+    case .feed(let colorHex): return feedColor(colorHex) ?? .labelColor
     }
+}
+
+/// "#RRGGBB" from the feed, or nil when it is absent or malformed.
+func feedColor(_ hex: String?) -> NSColor? {
+    guard let hex = hex?.trimmingCharacters(in: .whitespacesAndNewlines),
+          hex.count == 7, hex.hasPrefix("#") else { return nil }
+    let digits = hex.dropFirst()
+    guard digits.allSatisfy({ $0.isHexDigit }), let value = UInt32(digits, radix: 16) else { return nil }
+    return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+                   green: CGFloat((value >> 8) & 0xFF) / 255,
+                   blue: CGFloat(value & 0xFF) / 255, alpha: 1)
 }
 
 private func meterSecondaryLabelColor(isDark: Bool) -> NSColor {

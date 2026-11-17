@@ -99,9 +99,17 @@ Dockside reads the feed once a minute. The shape it expects:
 }
 ```
 
-- `name` is `Codex`; other accounts are ignored. `state` must be `ok` for the reading to count.
+- `name` is matched exactly against the accounts you asked for; other accounts are ignored. `state` must be `ok` for the reading to count.
 - `at` is when the numbers were taken. `used` is a whole-number percent. `resetsAt` is when the window resets. Dates are ISO 8601.
-- Codex uses the `5 hours` and `week` windows.
+- Each account uses its `5 hours` and `week` windows, shown as `<name> 5h` and `<name>`.
+
+To show more than one account, and to set the order:
+
+```sh
+defaults write com.dhrlabs.dockside UsageFeedAccounts "Work,Codex"
+```
+
+Unset or empty means `Codex` alone. An account with an optional `"color": "#RRGGBB"` field uses that color for its meters; without it, or with anything else there, the meters take a neutral color. Codex always keeps its teal. The color is used as given for both the percent text and the bar, so pick one that reads on light and dark backgrounds.
 
 ## Buttons from other apps
 
@@ -111,9 +119,11 @@ Other apps can add buttons to the strip at the right end of the Dock. The wire c
 
 ```sh
 bash Scripts/check-compact-layout.sh
+bash Scripts/check-feed-accounts.sh
+bash Scripts/check-button-reconnect.sh
 ```
 
-checks compact-layout geometry.
+check compact-layout geometry, feed account readings and colors, and button reconnect.
 
 ## Credits and license
 
