@@ -807,11 +807,23 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
     }
 }
 
-private func fillColor(for provider: UsageReading.Provider) -> NSColor {
+func fillColor(for provider: UsageReading.Provider) -> NSColor {
     switch provider {
     case .claude: return NSColor(srgbRed: 217.0 / 255, green: 119.0 / 255, blue: 87.0 / 255, alpha: 1)
     case .codex: return NSColor(srgbRed: 63.0 / 255, green: 191.0 / 255, blue: 178.0 / 255, alpha: 1)
+    case .feed(let colorHex): return feedColor(colorHex) ?? .labelColor
     }
+}
+
+/// "#RRGGBB" from the feed, or nil when it is absent or malformed.
+func feedColor(_ hex: String?) -> NSColor? {
+    guard let hex = hex?.trimmingCharacters(in: .whitespacesAndNewlines),
+          hex.count == 7, hex.hasPrefix("#") else { return nil }
+    let digits = hex.dropFirst()
+    guard digits.allSatisfy({ $0.isHexDigit }), let value = UInt32(digits, radix: 16) else { return nil }
+    return NSColor(srgbRed: CGFloat((value >> 16) & 0xFF) / 255,
+                   green: CGFloat((value >> 8) & 0xFF) / 255,
+                   blue: CGFloat(value & 0xFF) / 255, alpha: 1)
 }
 
 private func meterSecondaryLabelColor(isDark: Bool) -> NSColor {

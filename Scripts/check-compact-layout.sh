@@ -23,7 +23,7 @@ struct CompactLayoutCheck {
             UsageReading.empty("Claude 5h", provider: .claude, duration: 5 * 3600),
             UsageReading.empty("Claude", provider: .claude, duration: 7 * 86400),
             UsageReading.empty("Codex", provider: .codex),
-            UsageReading.empty("Grok", provider: .grok, duration: 7 * 86400)
+            UsageReading.empty("Work", provider: .feed(colorHex: nil), duration: 7 * 86400)
         ]
         let height: CGFloat = 58
         let widths = BubblePanel.meterWidths(height: height, readings: readings)
