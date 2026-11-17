@@ -116,6 +116,12 @@ final class BubblePanel: NSPanel {
         return (inset, gap, meterWidth, width)
     }
 
+    // Compact cells are narrow, so every five-hour meter is just "5h"; the weekly
+    // meter beside it carries the account name and the color ties the pair together.
+    fileprivate static func compactName(for label: String) -> String {
+        label.hasSuffix(" 5h") ? "5h" : label
+    }
+
     private let bubbleView = BubbleView()
     private let hoverCard = HoverCardPanel()
     private var dockFrame: CGRect?
@@ -423,7 +429,7 @@ private final class UsageMetersView: NSView {
         for (index, reading) in readings.enumerated() {
             let cellX = layout.inset + CGFloat(index) * (layout.meterWidth + layout.gap)
             let cell = NSRect(x: cellX, y: 0, width: layout.meterWidth, height: height)
-            let name = reading.label == "Claude 5h" ? "5h" : reading.label
+            let name = BubblePanel.compactName(for: reading.label)
             drawText(name,
                      in: NSRect(x: cell.minX, y: nameY, width: cell.width, height: nameHeight),
                      font: nameFont, color: meterSecondaryLabelColor(isDark: isDark), alignment: .center)

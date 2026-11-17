@@ -129,6 +129,29 @@ struct CompactLayoutCheck {
         }
         assert(ceil(textSize("Work 5h", font: compactNameFont).width) <= 44)
 
+        // Every five-hour meter shortens to "5h" in the compact view; the rest keep the name.
+        for label in ["Claude 5h", "Codex 5h", "Work 5h"] {
+            let short = BubblePanel.compactName(for: label)
+            assert(short == "5h", "\(label) -> \(short)")
+            print("compact name \"\(label)\" -> \"\(short)\"")
+        }
+        for label in ["Claude", "Codex", "Work", "Studio"] {
+            let short = BubblePanel.compactName(for: label)
+            assert(short == label, "\(label) -> \(short)")
+            let width = ceil(textSize(short, font: compactNameFont).width)
+            print(String(format: "compact name \"%@\" unchanged, %.0fpt vs a 44pt cell%@", short, width,
+                         width <= 44 ? "" : " (over)"))
+        }
+        for label in ["Studio", "Claude"] {
+            assert(ceil(textSize(label, font: compactNameFont).width) <= 44, label)
+        }
+        // The full row and the hover card both draw reading.label through
+        // drawMeterTitleLine, so their labels stay long.
+        let fullReading = UsageReading.empty("Work 5h", provider: .feed(colorHex: nil),
+                                             duration: 5 * 3600)
+        assert(fullReading.label == "Work 5h")
+        print("full row and hover card label stays \"\(fullReading.label)\"")
+
         print(String(format: "AI panel normal at 58pt: %.1fpt natural, %.1fpt readable minimum; compact: 180-216pt for four",
                      natural.width, upper))
         print("Compact layout checks passed")
