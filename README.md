@@ -109,7 +109,7 @@ To show more than one account, and to set the order:
 defaults write com.dhrlabs.dockside UsageFeedAccounts "Work,Codex"
 ```
 
-Unset or empty means `Codex` alone. An account with an optional `"color": "#RRGGBB"` field uses that color for its meters; without it, or with anything else there, the meters take a neutral color. Codex always keeps its teal.
+Unset or empty means `Codex` alone. An account with an optional `"color": "#RRGGBB"` field uses that color for its meters; without it, or with anything else there, the meters take a neutral color. Codex always keeps its teal. The color is used as given for both the percent text and the bar, so pick one that reads on light and dark backgrounds.
 
 ## Buttons from other apps
 
