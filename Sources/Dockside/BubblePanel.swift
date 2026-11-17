@@ -16,6 +16,7 @@ final class BubblePanel: NSPanel {
     fileprivate static let meterGapRatio: CGFloat = 0.25
     fileprivate static let horizontalInsetRatio: CGFloat = 0.28
     fileprivate static let compactWidthCap: CGFloat = 216
+    fileprivate static let compactCellWidth: CGFloat = 44
     fileprivate static let compactMinimumWidth: CGFloat = 180
     // Dark-mode Dock plate calibration: black tint over regular glass.
     static let tintAlpha: CGFloat = 0.55
@@ -103,10 +104,13 @@ final class BubblePanel: NSPanel {
         let requiredMinimum = minimumWidth ?? compactMinimumWidth
         guard count > 0, available.isFinite, requiredMinimum.isFinite,
               available >= requiredMinimum, requiredMinimum > 0 else { return nil }
-        let width = min(compactWidthCap, available)
         let inset: CGFloat = 8
-        let innerWidth = width - 2 * inset
         let gap: CGFloat = count > 1 ? 8 : 0
+        // Keep the four-meter cell width as the count grows: 216 up to four, then wider.
+        let cap = max(compactWidthCap,
+                      2 * inset + CGFloat(count) * compactCellWidth + CGFloat(count - 1) * 8)
+        let width = min(cap, available)
+        let innerWidth = width - 2 * inset
         let meterWidth = (innerWidth - gap * CGFloat(count - 1)) / CGFloat(count)
         guard meterWidth > 0 else { return nil }
         return (inset, gap, meterWidth, width)

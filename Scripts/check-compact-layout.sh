@@ -96,7 +96,40 @@ struct CompactLayoutCheck {
             }
         }
         print("Stats widths passed for all three themes at 40, 58, and 100pt")
-        print(String(format: "AI panel normal at 58pt: %.1fpt natural, %.1fpt readable minimum; compact: 180-216pt",
+
+        // Compact width grows with the meter count, keeping the four-meter cell width.
+        for (count, expected) in [(1, 216.0), (2, 216.0), (3, 216.0), (4, 216.0),
+                                  (5, 268.0), (6, 320.0), (7, 372.0)] {
+            guard let wide = BubblePanel.compactMeterLayout(available: 1000, count: count) else {
+                fatalError("Expected a compact layout for \(count) meters")
+            }
+            assert(wide.width == CGFloat(expected), "\(count) -> \(wide.width)")
+            if count >= 4 {
+                assert(abs(wide.meterWidth - 44) < 0.001, "\(count) -> \(wide.meterWidth)")
+            }
+        }
+        for count in 1...4 {
+            for available in availableWidths {
+                let layout = BubblePanel.compactMeterLayout(available: available, count: count)!
+                assert(layout.width == min(216, available), "\(count)@\(available) -> \(layout.width)")
+            }
+        }
+        let crowded = BubblePanel.compactMeterLayout(available: 250, count: 6)!
+        assert(crowded.width == 250 && crowded.meterWidth < 44,
+               "\(crowded.width) \(crowded.meterWidth)")
+        print(String(format: "compact caps: 1-4 -> 216, 5 -> 268, 6 -> 320; 6 meters in 250pt -> %.0fpt wide, %.1fpt cells",
+                     crowded.width, crowded.meterWidth))
+
+        // Labels in a 44pt cell, measured in the compact name font.
+        let compactNameFont = NSFont.systemFont(ofSize: min(10, max(7.5, 44 * 0.24)), weight: .medium)
+        for label in ["Work 5h", "Codex 5h", "Claude", "5h"] {
+            let width = ceil(textSize(label, font: compactNameFont).width)
+            print(String(format: "label \"%@\" %.0fpt vs a 44pt cell%@", label, width,
+                         width <= 44 ? "" : " (over)"))
+        }
+        assert(ceil(textSize("Work 5h", font: compactNameFont).width) <= 44)
+
+        print(String(format: "AI panel normal at 58pt: %.1fpt natural, %.1fpt readable minimum; compact: 180-216pt for four",
                      natural.width, upper))
         print("Compact layout checks passed")
     }
