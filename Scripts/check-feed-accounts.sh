@@ -99,6 +99,43 @@ struct FeedAccountsCheck {
         assert(describe(messy) == describe(two), describe(messy))
         print("d. \" Work , ,Codex \" -> \(describe(messy))")
 
+        // e. A color that is not a string decodes as absent and spoils nothing else.
+        let oddOnUnconfigured = """
+        {"accounts":[
+         {"name":"Spare","state":"ok","at":"2026-11-17T01:01:21Z","color":42,"windows":[
+           {"label":"week","used":9,"resetsAt":"2099-11-22T01:42:45Z"}]},
+         {"name":"Codex","state":"ok","at":"2026-11-17T01:01:21Z","windows":[
+           {"label":"week","used":61,"resetsAt":"2099-11-22T01:42:45Z"}]}]}
+        """
+        let oddCodex = UsageClient.feedReadings(from: accounts(oddOnUnconfigured),
+                                                names: UsageClient.accountNames(from: nil))
+        assert(describe(oddCodex) == "Codex=61", describe(oddCodex))
+        assert(hex(oddCodex[0]) == "#3FBFB2", hex(oddCodex[0]))
+
+        let oddOnConfigured = """
+        {"accounts":[
+         {"name":"Work","state":"ok","at":"2026-11-17T00:24:17Z","color":42,"windows":[
+           {"label":"week","used":3,"resetsAt":"2099-11-20T20:00:00Z"}]},
+         {"name":"Codex","state":"ok","at":"2026-11-17T01:01:21Z","windows":[
+           {"label":"week","used":61,"resetsAt":"2099-11-22T01:42:45Z"}]}]}
+        """
+        let oddWork = UsageClient.feedReadings(from: accounts(oddOnConfigured),
+                                               names: UsageClient.accountNames(from: "Work,Codex"))
+        assert(describe(oddWork) == "Work=3 Codex=61", describe(oddWork))
+        assert(fillColor(for: oddWork[0].provider) == neutral)
+        assert(describe([oddWork[1]]) == "Codex=61")
+        for json in [
+            "{\"accounts\":[{\"name\":\"Work\",\"color\":{\"hex\":\"#fff\"},\"state\":\"ok\",\"at\":\"2026-11-17T00:24:17Z\",\"windows\":[{\"label\":\"week\",\"used\":3,\"resetsAt\":\"2099-11-20T20:00:00Z\"}]}]}",
+            "{\"accounts\":[{\"name\":\"Work\",\"color\":[1,2],\"state\":\"ok\",\"at\":\"2026-11-17T00:24:17Z\",\"windows\":[{\"label\":\"week\",\"used\":3,\"resetsAt\":\"2099-11-20T20:00:00Z\"}]}]}",
+            "{\"accounts\":[{\"name\":\"Work\",\"color\":true,\"state\":\"ok\",\"at\":\"2026-11-17T00:24:17Z\",\"windows\":[{\"label\":\"week\",\"used\":3,\"resetsAt\":\"2099-11-20T20:00:00Z\"}]}]}"
+        ] {
+            let readings = UsageClient.feedReadings(from: accounts(json),
+                                                    names: UsageClient.accountNames(from: "Work"))
+            assert(describe(readings) == "Work=3", describe(readings))
+            assert(fillColor(for: readings[0].provider) == neutral)
+        }
+        print("e. non-string color -> absent; unconfigured odd account -> \(describe(oddCodex)); configured -> \(describe(oddWork)) with neutral Work")
+
         print("Feed account checks passed")
     }
 }

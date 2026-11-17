@@ -246,8 +246,23 @@ struct FeedAccount: Decodable {
     let state: String?
     let at: String?
     /// Optional "#RRGGBB" meter color for accounts other than Codex.
+    /// A color that is not a string decodes as absent so one odd account
+    /// never keeps the rest of the feed from decoding.
     let color: String?
     let windows: [FeedWindow]?
+
+    private enum CodingKeys: String, CodingKey {
+        case name, state, at, color, windows
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        state = try container.decodeIfPresent(String.self, forKey: .state)
+        at = try container.decodeIfPresent(String.self, forKey: .at)
+        color = try? container.decodeIfPresent(String.self, forKey: .color)
+        windows = try container.decodeIfPresent([FeedWindow].self, forKey: .windows)
+    }
 }
 
 struct FeedWindow: Decodable {
