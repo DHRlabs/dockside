@@ -17,9 +17,14 @@ struct UsageReading {
     let stateIsOK: Bool
     /// Rows the hover card keeps and the bubble row and compact view skip.
     let hoverOnly: Bool
+    /// Names the account a reading belongs to, apart from its label, so a Fable reading finds its own weekly meter.
+    let account: String?
+    /// True for the reading an account's weekly window made, the one meter a Fable sub-bar can sit under.
+    let isWeekly: Bool
 
     init(label: String, provider: Provider, duration: TimeInterval?, used: Double?,
-         resetsAt: Date?, observedAt: Date?, stateIsOK: Bool, hoverOnly: Bool = false) {
+         resetsAt: Date?, observedAt: Date?, stateIsOK: Bool, hoverOnly: Bool = false,
+         account: String? = nil, isWeekly: Bool = false) {
         self.label = label
         self.provider = provider
         self.duration = duration
@@ -28,6 +33,8 @@ struct UsageReading {
         self.observedAt = observedAt
         self.stateIsOK = stateIsOK
         self.hoverOnly = hoverOnly
+        self.account = account
+        self.isWeekly = isWeekly
     }
 
     func isCurrent(at now: Date = Date()) -> Bool {
@@ -165,6 +172,9 @@ private enum UsageClient {
         return url
     }
 
+    /// Account key of the main Claude readings; feed accounts are keyed "feed:<name>".
+    static let claudeAccount = "claude"
+
     static func fetchClaude() async -> ClaudeResult {
         let scan = await Task.detached(priority: .utility) {
             ClaudeDesktopUsageCache().read()
@@ -177,7 +187,7 @@ private enum UsageClient {
                                           duration: 5 * 3600, observedAt: cached.savedAt))
         }
         readings.append(claudeReading(cached.response.sevenDay, label: "Claude",
-                                      duration: 7 * 86400, observedAt: cached.savedAt))
+                                      duration: 7 * 86400, observedAt: cached.savedAt, isWeekly: true))
         if let fable = fableReading(from: cached.response.limits, observedAt: cached.savedAt) {
             readings.append(fable)
         }
@@ -192,7 +202,7 @@ private enum UsageClient {
               let resetsAt = parseDate(limit.resetsAt) else { return nil }
         return UsageReading(label: "Claude Fable", provider: .claude, duration: 7 * 86400,
                             used: percent, resetsAt: resetsAt, observedAt: observedAt,
-                            stateIsOK: true, hoverOnly: true)
+                            stateIsOK: true, hoverOnly: true, account: claudeAccount)
     }
 
     static func fetchFeed(from url: URL) async -> [FeedAccount]? {
@@ -246,7 +256,8 @@ private enum UsageClient {
             return UsageReading(label: label, provider: provider,
                          duration: duration, used: window.used.map(Double.init),
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
-                         stateIsOK: account.state == "ok", hoverOnly: order == 2)
+                         stateIsOK: account.state == "ok", hoverOnly: order == 2,
+                         account: "feed:\(name)", isWeekly: order == 1)
         }
         // A Fable window never takes the place of a reading the account would show
         // without it: with no five-hour and no weekly window the account keeps its
@@ -258,12 +269,14 @@ private enum UsageClient {
     }
 
     private static func claudeReading(
-        _ window: ClaudeWindow?, label: String, duration: TimeInterval, observedAt: Date
+        _ window: ClaudeWindow?, label: String, duration: TimeInterval, observedAt: Date,
+        isWeekly: Bool = false
     ) -> UsageReading {
         guard let window else { return .empty(label, provider: .claude, duration: duration) }
         return UsageReading(label: label, provider: .claude, duration: duration,
                             used: window.utilization, resetsAt: parseDate(window.resetsAt),
-                            observedAt: observedAt, stateIsOK: true)
+                            observedAt: observedAt, stateIsOK: true,
+                            account: claudeAccount, isWeekly: isWeekly)
     }
 
     private static func parseDate(_ value: String?) -> Date? {
