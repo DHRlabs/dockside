@@ -5,7 +5,10 @@ repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 temp_dir="$(mktemp -d)"
 trap 'rm -rf "$temp_dir"' EXIT
 
-cat "$repo_root/Sources/Dockside/Usage.swift" > "$temp_dir/FableHoverCheck.swift"
+# Usage.swift and BubblePanel.swift join the check in one file so its fileprivate
+# readings and compact layout are both in reach.
+cat "$repo_root/Sources/Dockside/Usage.swift" \
+    "$repo_root/Sources/Dockside/BubblePanel.swift" > "$temp_dir/FableHoverCheck.swift"
 cat >> "$temp_dir/FableHoverCheck.swift" <<'SWIFT'
 import AppKit
 
@@ -155,14 +158,50 @@ struct FableHoverCheck {
         assert(oddLimits.sevenDay?.utilization == 41 && oddLimits.limits == nil)
         print("d. missing percent, bad date, wrong kind, wrong scope and odd limits -> no row")
 
-        // e. An unparseable Fable feed window gives a hover row that reads as --, never a guess.
+        // e. An unparseable Fable feed window gives a hover row that reads as --, never a guess,
+        //    and the account still keeps the one empty meter it has without any Fable window.
         let blank = UsageClient.feedReadings(from: accounts(
             "{\"accounts\":[{\"name\":\"Work\",\"state\":\"ok\",\"at\":\"2026-11-17T00:24:17Z\",\"windows\":[{\"label\":\"Fable\",\"resetsAt\":\"2099-11-20T20:00:00Z\"}]}]}"),
                                              names: UsageClient.accountNames(from: "Work"))
-        assert(describe(blank) == "Work Fable=--", describe(blank))
-        assert(blank[0].percentageText(at: now) == "--")
-        assert(bubble(blank).isEmpty)
-        print("e. Fable window with no used -> \(describe(blank)) in the hover card, nothing in the bubble row")
+        assert(describe(blank) == "Work=-- Work Fable=--", describe(blank))
+        assert(describe(bubble(blank)) == "Work=--", describe(bubble(blank)))
+        assert(blank[1].percentageText(at: now) == "--")
+        print("e. Fable window with no used -> \(describe(blank)) in the hover card, "
+              + "\(describe(bubble(blank))) in the bubble row")
+
+        // f. The reviewer's case: five configured accounts, one with only a Fable window.
+        //    The bubble readings and the compact width must be exactly main's.
+        let fableOnlyFeed = """
+        {"accounts":[{"name":"Work","state":"ok","at":"2026-11-17T00:24:17Z","windows":[
+           {"label":"5 hours","used":7,"resetsAt":"2099-11-17T02:30:00Z"},
+           {"label":"week","used":3,"resetsAt":"2099-11-20T20:00:00Z"}]},
+          {"name":"Studio","state":"ok","at":"2026-11-17T00:24:17Z","windows":[
+           {"label":"Fable","used":46,"resetsAt":"2099-11-20T20:00:00Z"}]}]}
+        """
+        /// The same feed with the Fable window removed, which is what main sees.
+        let mainFeed = """
+        {"accounts":[{"name":"Work","state":"ok","at":"2026-11-17T00:24:17Z","windows":[
+           {"label":"5 hours","used":7,"resetsAt":"2099-11-17T02:30:00Z"},
+           {"label":"week","used":3,"resetsAt":"2099-11-20T20:00:00Z"}]},
+          {"name":"Studio","state":"ok","at":"2026-11-17T00:24:17Z","windows":[]}]}
+        """
+        let names = UsageClient.accountNames(from: "Work,Studio")
+        let withRow = claudeReadings(withFable, observedAt: now)
+            + UsageClient.feedReadings(from: accounts(fableOnlyFeed), names: names)
+        let mainRow = claudeReadings(withoutFable, observedAt: now)
+            + UsageClient.feedReadings(from: accounts(mainFeed), names: names)
+        assert(describe(bubble(withRow)) == describe(bubble(mainRow)), describe(bubble(withRow)))
+        assert(describe(bubble(withRow)) == "Claude 5h=18 Claude=41 Work 5h=7 Work=3 Studio=--",
+               describe(bubble(withRow)))
+        assert(bubble(withRow).count == 5 && mainRow.count == 5)
+        let hoverExtra = hover(withRow).filter { $0.hoverOnly }.map(\.label)
+        assert(hoverExtra == ["Claude Fable", "Studio Fable"], "\(hoverExtra)")
+        let before = BubblePanel.compactMeterLayout(available: 1000, count: bubble(mainRow).count)!
+        let after = BubblePanel.compactMeterLayout(available: 1000, count: bubble(withRow).count)!
+        assert(before.width == 268 && after.width == before.width, "\(before.width) \(after.width)")
+        print("f. five accounts, one Fable-only -> bubble \(describe(bubble(withRow))); "
+              + String(format: "compact %.0fpt on main and %.0fpt here; hover adds ", before.width, after.width)
+              + hoverExtra.joined(separator: ", "))
 
         print("Fable hover checks passed")
     }
@@ -172,7 +211,7 @@ SWIFT
 source_files=()
 for source in "$repo_root"/Sources/Dockside/*.swift; do
     case "$source" in
-        */Usage.swift|*/main.swift) continue ;;
+        */Usage.swift|*/BubblePanel.swift|*/main.swift) continue ;;
     esac
     source_files+=("$source")
 done

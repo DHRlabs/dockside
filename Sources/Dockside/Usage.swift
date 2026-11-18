@@ -236,10 +236,7 @@ private enum UsageClient {
             }
         }.sorted { $0.2 < $1.2 }
 
-        guard !windows.isEmpty else {
-            return [UsageReading.empty(name, provider: provider)]
-        }
-        return windows.map { window, duration, order in
+        let rows = windows.map { window, duration, order -> UsageReading in
             let label: String
             switch order {
             case 0: label = "\(name) 5h"
@@ -251,6 +248,13 @@ private enum UsageClient {
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
                          stateIsOK: account.state == "ok", hoverOnly: order == 2)
         }
+        // A Fable window never takes the place of a reading the account would show
+        // without it: with no five-hour and no weekly window the account keeps its
+        // one empty meter, and the Fable row follows it in the hover card only.
+        guard rows.contains(where: { !$0.hoverOnly }) else {
+            return [UsageReading.empty(name, provider: provider)] + rows
+        }
+        return rows
     }
 
     private static func claudeReading(
