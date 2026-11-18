@@ -68,11 +68,122 @@ private func hover(_ readings: [UsageReading]) -> [UsageReading] { readings }
 private func bubble(_ readings: [UsageReading]) -> [UsageReading] { readings.filter { !$0.hoverOnly } }
 
 private func hex(_ reading: UsageReading) -> String {
-    let color = fillColor(for: reading.provider).usingColorSpace(.sRGB) ?? .black
+    hex(meterFillColor(for: reading))
+}
+
+private func hex(_ color: NSColor) -> String {
+    let color = color.usingColorSpace(.sRGB) ?? .black
     return String(format: "#%02X%02X%02X",
                   Int((color.redComponent * 255).rounded()),
                   Int((color.greenComponent * 255).rounded()),
                   Int((color.blueComponent * 255).rounded()))
+}
+
+private let violet = "#8E6CF0"
+private let canvas = NSColor(srgbRed: 15 / 255.0, green: 19 / 255.0, blue: 26 / 255.0, alpha: 1)
+private let scale = 4
+private let dockHeight: CGFloat = 64
+
+/// The bubble meters drawn the way the app draws them, dark appearance, on a plate, at 4x.
+@MainActor
+private func renderBubble(_ bubble: [UsageReading], fable: [UsageReading]) -> (rep: NSBitmapImageRep, layout: (inset: CGFloat, gap: CGFloat, meterWidth: CGFloat, width: CGFloat)) {
+    _ = NSApplication.shared
+    let widths = BubblePanel.meterWidths(height: dockHeight, readings: bubble)
+    let layout = BubblePanel.meterLayout(height: dockHeight, available: 4000, count: bubble.count,
+                                         naturalMeterWidth: widths.natural,
+                                         minimumMeterWidth: widths.minimum)!
+    let view = UsageMetersView(frame: NSRect(x: 0, y: 0, width: layout.width, height: dockHeight))
+    view.appearance = NSAppearance(named: .darkAqua)
+    view.readings = bubble
+    view.fableReadings = fable
+    return (draw(view), layout)
+}
+
+@MainActor
+private func draw(_ view: NSView) -> NSBitmapImageRep {
+    let size = view.bounds.size
+    let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width.rounded(.up)) * scale,
+                               pixelsHigh: Int(size.height.rounded(.up)) * scale, bitsPerSample: 8,
+                               samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                               colorSpaceName: .calibratedRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+    rep.size = NSSize(width: Int(size.width.rounded(.up)), height: Int(size.height.rounded(.up)))
+    let context = NSGraphicsContext(bitmapImageRep: rep)!
+    NSGraphicsContext.saveGraphicsState()
+    NSGraphicsContext.current = context
+    canvas.setFill()
+    NSBezierPath(roundedRect: NSRect(origin: .zero, size: size), xRadius: 15, yRadius: 15).fill()
+    view.displayIgnoringOpacity(view.bounds, in: context)
+    NSGraphicsContext.restoreGraphicsState()
+    return rep
+}
+
+private func pixel(_ rep: NSBitmapImageRep, _ x: Int, _ y: Int) -> String {
+    hex(rep.colorAt(x: x, y: y) ?? .black)
+}
+
+private func near(_ a: String, _ b: String) -> Bool {
+    func parts(_ s: String) -> [Int] { (0..<3).map { Int(s.dropFirst(1 + $0 * 2).prefix(2), radix: 16)! } }
+    return zip(parts(a), parts(b)).allSatisfy { abs($0 - $1) <= 3 }
+}
+
+/// Bounding box (in pixels) of every pixel that differs between two renders, or nil.
+private func difference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (x: ClosedRange<Int>, y: ClosedRange<Int>)? {
+    assert(a.pixelsWide == b.pixelsWide && a.pixelsHigh == b.pixelsHigh)
+    var xs: [Int] = [], ys: [Int] = []
+    for y in 0..<a.pixelsHigh {
+        for x in 0..<a.pixelsWide where pixel(a, x, y) != pixel(b, x, y) { xs.append(x); ys.append(y) }
+    }
+    guard let x0 = xs.min(), let x1 = xs.max(), let y0 = ys.min(), let y1 = ys.max() else { return nil }
+    return (x0...x1, y0...y1)
+}
+
+/// Proves the sub-bar under the meter at `index`: nothing else changes, and its fill and color.
+@MainActor
+private func proveSubBar(bubble: [UsageReading], fable: [UsageReading], index: Int, share: Double,
+                         trackBetween: Bool = true) -> String {
+    let plain = renderBubble(bubble, fable: [])
+    let with = renderBubble(bubble, fable: fable)
+    let diff = difference(plain.rep, with.rep)!
+    let meterX = Int(((plain.layout.inset + CGFloat(index) * (plain.layout.meterWidth + plain.layout.gap))
+                      * CGFloat(scale)).rounded())
+    let meterW = Int((plain.layout.meterWidth * CGFloat(scale)).rounded())
+    // Every changed pixel sits in the strip under that one meter's bar, as wide as the meter.
+    assert(abs(diff.x.lowerBound - meterX) <= 2 && abs(diff.x.upperBound - (meterX + meterW)) <= 2,
+           "\(diff.x) vs \(meterX)+\(meterW)")
+    let strip = diff.y.upperBound - diff.y.lowerBound + 1
+    let barPixels = Int((dockHeight * 0.08 * CGFloat(scale)).rounded())
+    assert(abs(strip - barPixels / 2) <= 2, "strip \(strip) vs half of \(barPixels)")
+    // Fill fraction and colors along the strip's middle row.
+    let row = (diff.y.lowerBound + diff.y.upperBound) / 2
+    let samples = (diff.x.lowerBound...diff.x.upperBound).map { pixel(with.rep, $0, row) }
+    let violetCount = samples.filter { near($0, violet) }.count
+    let fraction = Double(violetCount) / Double(samples.count)
+    assert(abs(fraction - share) < 0.03, "fill \(fraction)")
+    let track = hex(NSColor(srgbRed: 44.0 / 255, green: 54.0 / 255, blue: 72.0 / 255, alpha: 1))
+    assert(near(samples.last!, track) || near(samples[samples.count - 4], track), samples.last!)
+    assert(!samples.contains { near($0, "#D97757") || near($0, "#D9923F") })
+    // The rest of the bubble, meter by meter, is byte for byte what main draws.
+    assert(with.rep.pixelsWide == plain.rep.pixelsWide)
+    return String(format: "sub-bar x %d-%d y %d-%d, fill %.2f, color %@", diff.x.lowerBound, diff.x.upperBound,
+                  diff.y.lowerBound, diff.y.upperBound, fraction, violet)
+}
+
+/// The hover card rows, dark, to read the Fable row's bar color.
+@MainActor
+private func hoverRowColors(_ readings: [UsageReading]) -> Set<String> {
+    _ = NSApplication.shared
+    let rows = HoverCardRowsView(frame: NSRect(x: 0, y: 0, width: 260, height: 24 + 48 * CGFloat(readings.count)))
+    rows.appearance = NSAppearance(named: .darkAqua)
+    rows.readings = readings
+    let rep = draw(rows)
+    var colors = Set<String>()
+    for y in 0..<rep.pixelsHigh { for x in 0..<rep.pixelsWide {
+        let color = pixel(rep, x, y)
+        if near(color, violet) { colors.insert(violet) }
+        if near(color, "#D97757") { colors.insert("#D97757") }
+        if near(color, "#D9923F") { colors.insert("#D9923F") }
+    } }
+    return colors
 }
 
 /// Readings the main-account payload makes, built the way the poller builds them.
@@ -112,7 +223,7 @@ struct FableHoverCheck {
         assert(fable.hoverOnly)
         assert(fable.percentageText(at: now) == "0%", fable.percentageText(at: now))
         assert(fable.resetLine(at: now) != nil)
-        assert(hex(fable) == hex(main[1]), hex(fable))
+        assert(hex(fable) == violet && hex(main[1]) == "#D97757", hex(fable))
         print("a. with Fable -> hover \(describe(hover(main))); bubble \(describe(bubble(main))); "
               + "Claude Fable \(fable.percentageText(at: now)) resets in \(fable.resetLine(at: now)!) color \(hex(fable))")
 
@@ -122,7 +233,7 @@ struct FableHoverCheck {
         assert(describe(hover(work)) == "Work 5h=7 Work=3 Work Fable=46", describe(work))
         assert(describe(bubble(work)) == "Work 5h=7 Work=3", describe(bubble(work)))
         assert(work[2].hoverOnly && !work[0].hoverOnly && !work[1].hoverOnly)
-        assert(hex(work[2]) == "#D9923F" && hex(work[1]) == "#D9923F", hex(work[2]))
+        assert(hex(work[2]) == violet && hex(work[1]) == "#D9923F", hex(work[2]))
         print("b. Work with Fable -> hover \(describe(hover(work))); bubble \(describe(bubble(work))); "
               + "Work Fable color \(hex(work[2]))")
 
@@ -202,6 +313,56 @@ struct FableHoverCheck {
         print("f. five accounts, one Fable-only -> bubble \(describe(bubble(withRow))); "
               + String(format: "compact %.0fpt on main and %.0fpt here; hover adds ", before.width, after.width)
               + hoverExtra.joined(separator: ", "))
+
+        // g. The bubble sub-bar, from real drawing: Claude Fable 46 under the weekly Claude meter.
+        let weeklyNow = now.addingTimeInterval(3 * 86400)
+        func reading(_ label: String, _ provider: UsageReading.Provider, _ used: Double,
+                     hours: Double, week: Bool = false, hoverOnly: Bool = false) -> UsageReading {
+            UsageReading(label: label, provider: provider, duration: week ? 7 * 86400 : 5 * 3600, used: used,
+                         resetsAt: week ? weeklyNow : now.addingTimeInterval(hours * 3600),
+                         observedAt: now, stateIsOK: true, hoverOnly: hoverOnly)
+        }
+        let workColor = UsageReading.Provider.feed(colorHex: "#D9923F")
+        let claudeBubble = [reading("Claude 5h", .claude, 18, hours: 3), reading("Claude", .claude, 41, hours: 0, week: true)]
+        let claudeFable = reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true)
+        assert(BubblePanel.fableReading(for: claudeBubble[1], in: [claudeFable]) != nil)
+        assert(BubblePanel.fableReading(for: claudeBubble[0], in: [claudeFable]) == nil)
+        let claudeProof = proveSubBar(bubble: claudeBubble, fable: [claudeFable], index: 1, share: 0.46)
+        let sameWidths = BubblePanel.meterWidths(height: dockHeight, readings: claudeBubble)
+        assert(sameWidths.natural == BubblePanel.meterWidths(height: dockHeight, readings: bubble(claudeBubble + [claudeFable])).natural)
+        assert(describe(bubble(claudeBubble + [claudeFable])) == "Claude 5h=18 Claude=41")
+        let hoverClaude = hoverRowColors(claudeBubble + [claudeFable])
+        assert(hoverClaude == [violet, "#D97757"], "\(hoverClaude)")
+        print("g. Claude Fable 46 -> bubble meters Claude 5h, Claude (2, widths unchanged); \(claudeProof); "
+              + "hover Fable row \(hex(claudeFable))")
+
+        // h. The same for the feed account Work.
+        let workBubble = [reading("Work 5h", workColor, 7, hours: 2), reading("Work", workColor, 3, hours: 0, week: true)]
+        let workFable = reading("Work Fable", workColor, 46, hours: 0, week: true, hoverOnly: true)
+        let workProof = proveSubBar(bubble: workBubble, fable: [workFable], index: 1, share: 0.46)
+        let hoverWork = hoverRowColors(workBubble + [workFable])
+        assert(hoverWork == [violet, "#D9923F"], "\(hoverWork)")
+        print("h. Work Fable 46 -> bubble meters Work 5h, Work; \(workProof); hover Fable row \(hex(workFable))")
+
+        // i. No Fable reading for the account: the drawing is untouched, pixel for pixel.
+        let stranger = reading("Other Fable", .claude, 30, hours: 0, week: true, hoverOnly: true)
+        let none = renderBubble(claudeBubble, fable: [])
+        let unrelated = renderBubble(claudeBubble, fable: [stranger])
+        assert(difference(none.rep, unrelated.rep) == nil)
+        assert(difference(none.rep, renderBubble(workBubble, fable: []).rep) != nil)
+        print("i. no matching Fable reading -> bubble pixels identical to the no-Fable drawing")
+
+        // j. Sample bubble for the designer, when a path is given.
+        if let path = ProcessInfo.processInfo.environment["DOCKSIDE_SUBBAR_PNG"] {
+            let sample = [reading("Claude 5h", .claude, 18, hours: 3), reading("Claude", .claude, 41, hours: 0, week: true),
+                          reading("Work 5h", workColor, 7, hours: 2), reading("Work", workColor, 3, hours: 0, week: true),
+                          reading("Codex", .codex, 63, hours: 0, week: true)]
+            let fables = [reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true),
+                          reading("Work Fable", workColor, 12, hours: 0, week: true, hoverOnly: true)]
+            let png = renderBubble(sample, fable: fables).rep.representation(using: .png, properties: [:])!
+            try! png.write(to: URL(fileURLWithPath: path))
+            print("j. sample bubble written to \(path)")
+        }
 
         print("Fable hover checks passed")
     }

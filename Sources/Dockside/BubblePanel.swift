@@ -49,6 +49,19 @@ final class BubblePanel: NSPanel {
         return nameWidth + percentWidth + 2 * fonts.gap + ceil(textSize(reset, font: fonts.name).width)
     }
 
+    /// The Fable reading that belongs to an account's weekly meter, whose label is the account name.
+    fileprivate static func fableReading(for reading: UsageReading,
+                                         in fable: [UsageReading]) -> UsageReading? {
+        fable.first { $0.label == reading.label + " Fable" }
+    }
+
+    /// A half-height strip tucked into the space between the bar and the reset line.
+    fileprivate static func fableSubBarRect(under bar: NSRect, dockHeight: CGFloat) -> NSRect {
+        let height = bar.height / 2
+        return NSRect(x: bar.minX, y: bar.minY - dockHeight * 0.015 - height,
+                      width: bar.width, height: height)
+    }
+
     fileprivate static func fittedMeterFonts(height: CGFloat, readings: [UsageReading],
                                              meterWidth: CGFloat) -> MeterFonts {
         var nameSize = max(6, height * 0.2)
@@ -166,7 +179,7 @@ final class BubblePanel: NSPanel {
     func update(_ readings: [UsageReading]) {
         self.readings = readings
         bubbleReadings = readings.filter { !$0.hoverOnly }
-        bubbleView.update(bubbleReadings)
+        bubbleView.update(bubbleReadings, fable: readings.filter { $0.hoverOnly })
         hoverCard.update(readings, theme: theme)
         if let dockFrame { place(leftOf: dockFrame) }
     }
@@ -318,8 +331,9 @@ private final class BubbleView: NSView {
     override func mouseEntered(with event: NSEvent) { onHover?(true) }
     override func mouseExited(with event: NSEvent) { onHover?(false) }
 
-    func update(_ readings: [UsageReading]) {
+    func update(_ readings: [UsageReading], fable: [UsageReading]) {
         meters.readings = readings
+        meters.fableReadings = fable
         meters.needsDisplay = true
     }
 
@@ -344,6 +358,8 @@ private final class BubbleView: NSView {
 @MainActor
 private final class UsageMetersView: NSView {
     var readings: [UsageReading] = []
+    /// Hover-only Fable readings; each one draws a sub-bar under its account's weekly meter.
+    var fableReadings: [UsageReading] = []
     var theme: DocksideTheme = .glass
     var isCompact = false
     override var isFlipped: Bool { false }
@@ -383,7 +399,13 @@ private final class UsageMetersView: NSView {
                                in: NSRect(x: x, y: lineY, width: meterWidth, height: fonts.lineHeight),
                                fonts: fonts, showReset: false,
                                isDark: isDarkAppearance)
-            drawMeter(reading, in: NSRect(x: x, y: barY, width: meterWidth, height: barHeight),
+            let barRect = NSRect(x: x, y: barY, width: meterWidth, height: barHeight)
+            if let fable = BubblePanel.fableReading(for: reading, in: fableReadings) {
+                drawMeter(fable, in: BubblePanel.fableSubBarRect(under: barRect, dockHeight: height),
+                          at: now, dockHeight: height, isDark: isDarkAppearance, theme: theme,
+                          segmentBasis: barHeight, showsPace: false)
+            }
+            drawMeter(reading, in: barRect,
                       at: now, dockHeight: height, isDark: isDarkAppearance, theme: theme)
             if let reset = reading.resetLine(at: now) {
                 drawText(reset, in: NSRect(x: x, y: resetY, width: meterWidth, height: resetHeight),
@@ -780,13 +802,14 @@ private func drawMeterTitleLine(_ reading: UsageReading, at now: Date, in rect: 
 
 @MainActor
 private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
-                       dockHeight: CGFloat, isDark: Bool, theme: DocksideTheme = .glass) {
+                       dockHeight: CGFloat, isDark: Bool, theme: DocksideTheme = .glass,
+                       segmentBasis: CGFloat? = nil, showsPace: Bool = true) {
     guard rect.width > 0, rect.height > 0 else { return }
     let share = reading.share(at: now)
-    let filledColor = fillColor(for: reading.provider)
+    let filledColor = meterFillColor(for: reading)
     if theme == .pixel || theme == .ticks {
         let gap = max(0.7, rect.height * 0.24)
-        let count = max(1, Int(rect.width / (rect.height * 1.65)))
+        let count = max(1, Int(rect.width / ((segmentBasis ?? rect.height) * 1.65)))
         let segmentWidth = max(0, (rect.width - gap * CGFloat(count - 1)) / CGFloat(count))
         let filledSegments: CGFloat = CGFloat(min(1, max(0, share ?? 0))) * CGFloat(count)
         for index in 0..<count {
@@ -809,7 +832,7 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
             NSGraphicsContext.restoreGraphicsState()
         }
     }
-    if let pace = reading.pace(at: now) {
+    if showsPace, let pace = reading.pace(at: now) {
         let tickWidth = max(1.5, dockHeight * 2 / 58)
         let tickExtension = dockHeight * 3 / 58
         let tick = NSRect(x: rect.minX + rect.width * pace - tickWidth / 2,
@@ -818,6 +841,13 @@ private func drawMeter(_ reading: UsageReading, in rect: NSRect, at now: Date,
         (isDark ? NSColor.white : NSColor.labelColor).setFill()
         tick.fill()
     }
+}
+
+/// Fable readings share one violet in the bubble and the hover card, whatever the account's color.
+let fableColor = NSColor(srgbRed: 0x8E / 255.0, green: 0x6C / 255.0, blue: 0xF0 / 255.0, alpha: 1)
+
+func meterFillColor(for reading: UsageReading) -> NSColor {
+    reading.hoverOnly ? fableColor : fillColor(for: reading.provider)
 }
 
 func fillColor(for provider: UsageReading.Provider) -> NSColor {
