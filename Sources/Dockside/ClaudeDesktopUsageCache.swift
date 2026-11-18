@@ -4,10 +4,54 @@ import Darwin
 struct ClaudeResponse: Decodable, Sendable {
     let fiveHour: ClaudeWindow?
     let sevenDay: ClaudeWindow?
+    /// The same payload also carries a `limits` array with per-model weekly entries.
+    let limits: [ClaudeLimit]?
 
     enum CodingKeys: String, CodingKey {
         case fiveHour = "five_hour"
         case sevenDay = "seven_day"
+        case limits
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        fiveHour = try container.decodeIfPresent(ClaudeWindow.self, forKey: .fiveHour)
+        sevenDay = try container.decodeIfPresent(ClaudeWindow.self, forKey: .sevenDay)
+        // An odd limits array never keeps the five-hour and weekly numbers from decoding.
+        limits = try? container.decodeIfPresent([ClaudeLimit].self, forKey: .limits)
+    }
+}
+
+/// One entry of the payload's `limits` array, such as the weekly limit scoped to a single model.
+struct ClaudeLimit: Decodable, Sendable {
+    struct Scope: Decodable, Sendable {
+        struct Model: Decodable, Sendable {
+            let displayName: String?
+
+            enum CodingKeys: String, CodingKey {
+                case displayName = "display_name"
+            }
+        }
+
+        let model: Model?
+    }
+
+    let kind: String?
+    let percent: Double?
+    let resetsAt: String?
+    let scope: Scope?
+
+    enum CodingKeys: String, CodingKey {
+        case kind, percent, scope
+        case resetsAt = "resets_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        kind = try? container.decodeIfPresent(String.self, forKey: .kind)
+        percent = try? container.decodeIfPresent(Double.self, forKey: .percent)
+        resetsAt = try? container.decodeIfPresent(String.self, forKey: .resetsAt)
+        scope = try? container.decodeIfPresent(Scope.self, forKey: .scope)
     }
 }
 
