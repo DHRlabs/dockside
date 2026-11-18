@@ -49,10 +49,11 @@ final class BubblePanel: NSPanel {
         return nameWidth + percentWidth + 2 * fonts.gap + ceil(textSize(reset, font: fonts.name).width)
     }
 
-    /// The Fable reading that belongs to an account's weekly meter, whose label is the account name.
+    /// The Fable reading of the same account, only for that account's weekly meter.
     fileprivate static func fableReading(for reading: UsageReading,
                                          in fable: [UsageReading]) -> UsageReading? {
-        fable.first { $0.label == reading.label + " Fable" }
+        guard reading.isWeekly, let account = reading.account else { return nil }
+        return fable.first { $0.account == account }
     }
 
     /// A half-height strip tucked into the space between the bar and the reset line.

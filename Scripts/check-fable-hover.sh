@@ -195,13 +195,14 @@ private func claudeReadings(_ json: String, observedAt: Date) -> [UsageReading] 
         readings.append(UsageReading(label: "Claude 5h", provider: .claude, duration: 5 * 3600,
                                      used: fiveHour.utilization,
                                      resetsAt: ISO8601DateFormatter().date(from: fiveHour.resetsAt ?? ""),
-                                     observedAt: observedAt, stateIsOK: true))
+                                     observedAt: observedAt, stateIsOK: true, account: "claude"))
     }
     if let sevenDay = decoded.sevenDay {
         readings.append(UsageReading(label: "Claude", provider: .claude, duration: 7 * 86400,
                                      used: sevenDay.utilization,
                                      resetsAt: ISO8601DateFormatter().date(from: sevenDay.resetsAt ?? ""),
-                                     observedAt: observedAt, stateIsOK: true))
+                                     observedAt: observedAt, stateIsOK: true,
+                                     account: "claude", isWeekly: true))
     }
     if let fable = UsageClient.fableReading(from: decoded.limits, observedAt: observedAt) {
         readings.append(fable)
@@ -317,14 +318,16 @@ struct FableHoverCheck {
         // g. The bubble sub-bar, from real drawing: Claude Fable 46 under the weekly Claude meter.
         let weeklyNow = now.addingTimeInterval(3 * 86400)
         func reading(_ label: String, _ provider: UsageReading.Provider, _ used: Double,
-                     hours: Double, week: Bool = false, hoverOnly: Bool = false) -> UsageReading {
+                     hours: Double, week: Bool = false, hoverOnly: Bool = false,
+                     account: String? = nil) -> UsageReading {
             UsageReading(label: label, provider: provider, duration: week ? 7 * 86400 : 5 * 3600, used: used,
                          resetsAt: week ? weeklyNow : now.addingTimeInterval(hours * 3600),
-                         observedAt: now, stateIsOK: true, hoverOnly: hoverOnly)
+                         observedAt: now, stateIsOK: true, hoverOnly: hoverOnly,
+                         account: account, isWeekly: week && !hoverOnly)
         }
         let workColor = UsageReading.Provider.feed(colorHex: "#D9923F")
-        let claudeBubble = [reading("Claude 5h", .claude, 18, hours: 3), reading("Claude", .claude, 41, hours: 0, week: true)]
-        let claudeFable = reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true)
+        let claudeBubble = [reading("Claude 5h", .claude, 18, hours: 3, account: "claude"), reading("Claude", .claude, 41, hours: 0, week: true, account: "claude")]
+        let claudeFable = reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true, account: "claude")
         assert(BubblePanel.fableReading(for: claudeBubble[1], in: [claudeFable]) != nil)
         assert(BubblePanel.fableReading(for: claudeBubble[0], in: [claudeFable]) == nil)
         let claudeProof = proveSubBar(bubble: claudeBubble, fable: [claudeFable], index: 1, share: 0.46)
@@ -337,28 +340,56 @@ struct FableHoverCheck {
               + "hover Fable row \(hex(claudeFable))")
 
         // h. The same for the feed account Work.
-        let workBubble = [reading("Work 5h", workColor, 7, hours: 2), reading("Work", workColor, 3, hours: 0, week: true)]
-        let workFable = reading("Work Fable", workColor, 46, hours: 0, week: true, hoverOnly: true)
+        let workBubble = [reading("Work 5h", workColor, 7, hours: 2, account: "feed:Work"), reading("Work", workColor, 3, hours: 0, week: true, account: "feed:Work")]
+        let workFable = reading("Work Fable", workColor, 46, hours: 0, week: true, hoverOnly: true, account: "feed:Work")
         let workProof = proveSubBar(bubble: workBubble, fable: [workFable], index: 1, share: 0.46)
         let hoverWork = hoverRowColors(workBubble + [workFable])
         assert(hoverWork == [violet, "#D9923F"], "\(hoverWork)")
         print("h. Work Fable 46 -> bubble meters Work 5h, Work; \(workProof); hover Fable row \(hex(workFable))")
 
         // i. No Fable reading for the account: the drawing is untouched, pixel for pixel.
-        let stranger = reading("Other Fable", .claude, 30, hours: 0, week: true, hoverOnly: true)
+        let stranger = reading("Other Fable", .claude, 30, hours: 0, week: true, hoverOnly: true, account: "other")
         let none = renderBubble(claudeBubble, fable: [])
         let unrelated = renderBubble(claudeBubble, fable: [stranger])
         assert(difference(none.rep, unrelated.rep) == nil)
         assert(difference(none.rep, renderBubble(workBubble, fable: []).rep) != nil)
         print("i. no matching Fable reading -> bubble pixels identical to the no-Fable drawing")
 
+        // k. The reviewer's case: "Work" (five-hour only) beside "Work 5h" (week and Fable), built
+        //    through the feed. Only the Work 5h account's weekly meter gets the sub-bar.
+        let twin = UsageClient.feedReadings(from: accounts("""
+        {"accounts":[{"name":"Work","state":"ok","at":"2026-11-17T00:24:17Z","windows":[
+           {"label":"5 hours","used":7,"resetsAt":"2099-11-17T02:30:00Z"}]},
+          {"name":"Work 5h","state":"ok","at":"2026-11-17T00:24:17Z","windows":[
+           {"label":"week","used":3,"resetsAt":"2099-11-20T20:00:00Z"},
+           {"label":"Fable","used":46,"resetsAt":"2099-11-20T20:00:00Z"}]}]}
+        """), names: ["Work", "Work 5h"])
+        assert(describe(bubble(twin)) == "Work 5h=7 Work 5h=3", describe(bubble(twin)))
+        let twinBubble = bubble(twin), twinFable = twin.filter { $0.hoverOnly }
+        assert(twinFable.count == 1)
+        assert(BubblePanel.fableReading(for: twinBubble[0], in: twinFable) == nil)
+        assert(BubblePanel.fableReading(for: twinBubble[1], in: twinFable) != nil)
+        let twinProof = proveSubBar(bubble: twinBubble, fable: twinFable, index: 1, share: 0.46)
+        print("k. Work + Work 5h -> five-hour meter of Work none; Work 5h weekly meter only; \(twinProof)")
+
+        // l. A Fable-only account: its empty placeholder draws no sub-bar, the hover row stays.
+        let only = UsageClient.feedReadings(from: accounts(fableOnlyFeed), names: ["Studio"])
+        assert(describe(bubble(only)) == "Studio=--" && hover(only).filter { $0.hoverOnly }.count == 1)
+        assert(BubblePanel.fableReading(for: bubble(only)[0], in: only.filter { $0.hoverOnly }) == nil)
+        let onlyPlain = renderBubble(bubble(only), fable: [])
+        assert(difference(onlyPlain.rep, renderBubble(bubble(only), fable: only.filter { $0.hoverOnly }).rep) == nil)
+        // The same name with no weekly window, as a five-hour account, never gets one either.
+        let fiveOnly = UsageClient.feedReadings(from: accounts(feedWithFable), names: ["Work"])
+        assert(BubblePanel.fableReading(for: fiveOnly[0], in: fiveOnly.filter { $0.hoverOnly }) == nil)
+        print("l. Fable-only Studio -> bubble Studio=--, no sub-bar (pixels identical), hover row Studio Fable kept")
+
         // j. Sample bubble for the designer, when a path is given.
         if let path = ProcessInfo.processInfo.environment["DOCKSIDE_SUBBAR_PNG"] {
-            let sample = [reading("Claude 5h", .claude, 18, hours: 3), reading("Claude", .claude, 41, hours: 0, week: true),
-                          reading("Work 5h", workColor, 7, hours: 2), reading("Work", workColor, 3, hours: 0, week: true),
-                          reading("Codex", .codex, 63, hours: 0, week: true)]
-            let fables = [reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true),
-                          reading("Work Fable", workColor, 12, hours: 0, week: true, hoverOnly: true)]
+            let sample = [reading("Claude 5h", .claude, 18, hours: 3, account: "claude"), reading("Claude", .claude, 41, hours: 0, week: true, account: "claude"),
+                          reading("Work 5h", workColor, 7, hours: 2, account: "feed:Work"), reading("Work", workColor, 3, hours: 0, week: true, account: "feed:Work"),
+                          reading("Codex", .codex, 63, hours: 0, week: true, account: "feed:Codex")]
+            let fables = [reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true, account: "claude"),
+                          reading("Work Fable", workColor, 12, hours: 0, week: true, hoverOnly: true, account: "feed:Work")]
             let png = renderBubble(sample, fable: fables).rep.representation(using: .png, properties: [:])!
             try! png.write(to: URL(fileURLWithPath: path))
             print("j. sample bubble written to \(path)")
