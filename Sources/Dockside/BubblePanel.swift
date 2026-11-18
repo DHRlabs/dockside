@@ -363,6 +363,8 @@ private final class UsageMetersView: NSView {
     var fableReadings: [UsageReading] = []
     var theme: DocksideTheme = .glass
     var isCompact = false
+    /// Fixed clock for the countdown text; nil reads the current time at each draw.
+    var now: Date?
     override var isFlipped: Bool { false }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -372,7 +374,7 @@ private final class UsageMetersView: NSView {
         }
         let height = bounds.height
         let count = readings.count
-        let now = Date()
+        let now = self.now ?? Date()
         let widths = BubblePanel.meterWidths(height: height, readings: readings)
         guard let layout = BubblePanel.meterLayout(
             height: height, available: bounds.width, count: count,
@@ -416,7 +418,7 @@ private final class UsageMetersView: NSView {
     }
 
     private func drawCompactMeters() {
-        let now = Date()
+        let now = self.now ?? Date()
         let count = readings.count
         guard let layout = BubblePanel.compactMeterLayout(
             available: bounds.width, count: count,

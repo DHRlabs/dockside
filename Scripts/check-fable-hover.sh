@@ -86,7 +86,7 @@ private let dockHeight: CGFloat = 64
 
 /// The bubble meters drawn the way the app draws them, dark appearance, on a plate, at 4x.
 @MainActor
-private func renderBubble(_ bubble: [UsageReading], fable: [UsageReading]) -> (rep: NSBitmapImageRep, layout: (inset: CGFloat, gap: CGFloat, meterWidth: CGFloat, width: CGFloat)) {
+private func renderBubble(_ bubble: [UsageReading], fable: [UsageReading], now: Date) -> (rep: NSBitmapImageRep, layout: (inset: CGFloat, gap: CGFloat, meterWidth: CGFloat, width: CGFloat)) {
     _ = NSApplication.shared
     let widths = BubblePanel.meterWidths(height: dockHeight, readings: bubble)
     let layout = BubblePanel.meterLayout(height: dockHeight, available: 4000, count: bubble.count,
@@ -96,6 +96,7 @@ private func renderBubble(_ bubble: [UsageReading], fable: [UsageReading]) -> (r
     view.appearance = NSAppearance(named: .darkAqua)
     view.readings = bubble
     view.fableReadings = fable
+    view.now = now
     return (draw(view), layout)
 }
 
@@ -139,10 +140,10 @@ private func difference(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep) -> (x: Clo
 
 /// Proves the sub-bar under the meter at `index`: nothing else changes, and its fill and color.
 @MainActor
-private func proveSubBar(bubble: [UsageReading], fable: [UsageReading], index: Int, share: Double,
+private func proveSubBar(bubble: [UsageReading], fable: [UsageReading], index: Int, share: Double, now: Date,
                          trackBetween: Bool = true) -> String {
-    let plain = renderBubble(bubble, fable: [])
-    let with = renderBubble(bubble, fable: fable)
+    let plain = renderBubble(bubble, fable: [], now: now)
+    let with = renderBubble(bubble, fable: fable, now: now)
     let diff = difference(plain.rep, with.rep)!
     let meterX = Int(((plain.layout.inset + CGFloat(index) * (plain.layout.meterWidth + plain.layout.gap))
                       * CGFloat(scale)).rounded())
@@ -330,7 +331,7 @@ struct FableHoverCheck {
         let claudeFable = reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true, account: "claude")
         assert(BubblePanel.fableReading(for: claudeBubble[1], in: [claudeFable]) != nil)
         assert(BubblePanel.fableReading(for: claudeBubble[0], in: [claudeFable]) == nil)
-        let claudeProof = proveSubBar(bubble: claudeBubble, fable: [claudeFable], index: 1, share: 0.46)
+        let claudeProof = proveSubBar(bubble: claudeBubble, fable: [claudeFable], index: 1, share: 0.46, now: now)
         let sameWidths = BubblePanel.meterWidths(height: dockHeight, readings: claudeBubble)
         assert(sameWidths.natural == BubblePanel.meterWidths(height: dockHeight, readings: bubble(claudeBubble + [claudeFable])).natural)
         assert(describe(bubble(claudeBubble + [claudeFable])) == "Claude 5h=18 Claude=41")
@@ -342,17 +343,17 @@ struct FableHoverCheck {
         // h. The same for the feed account Work.
         let workBubble = [reading("Work 5h", workColor, 7, hours: 2, account: "feed:Work"), reading("Work", workColor, 3, hours: 0, week: true, account: "feed:Work")]
         let workFable = reading("Work Fable", workColor, 46, hours: 0, week: true, hoverOnly: true, account: "feed:Work")
-        let workProof = proveSubBar(bubble: workBubble, fable: [workFable], index: 1, share: 0.46)
+        let workProof = proveSubBar(bubble: workBubble, fable: [workFable], index: 1, share: 0.46, now: now)
         let hoverWork = hoverRowColors(workBubble + [workFable])
         assert(hoverWork == [violet, "#D9923F"], "\(hoverWork)")
         print("h. Work Fable 46 -> bubble meters Work 5h, Work; \(workProof); hover Fable row \(hex(workFable))")
 
         // i. No Fable reading for the account: the drawing is untouched, pixel for pixel.
         let stranger = reading("Other Fable", .claude, 30, hours: 0, week: true, hoverOnly: true, account: "other")
-        let none = renderBubble(claudeBubble, fable: [])
-        let unrelated = renderBubble(claudeBubble, fable: [stranger])
+        let none = renderBubble(claudeBubble, fable: [], now: now)
+        let unrelated = renderBubble(claudeBubble, fable: [stranger], now: now)
         assert(difference(none.rep, unrelated.rep) == nil)
-        assert(difference(none.rep, renderBubble(workBubble, fable: []).rep) != nil)
+        assert(difference(none.rep, renderBubble(workBubble, fable: [], now: now).rep) != nil)
         print("i. no matching Fable reading -> bubble pixels identical to the no-Fable drawing")
 
         // k. The reviewer's case: "Work" (five-hour only) beside "Work 5h" (week and Fable), built
@@ -369,15 +370,15 @@ struct FableHoverCheck {
         assert(twinFable.count == 1)
         assert(BubblePanel.fableReading(for: twinBubble[0], in: twinFable) == nil)
         assert(BubblePanel.fableReading(for: twinBubble[1], in: twinFable) != nil)
-        let twinProof = proveSubBar(bubble: twinBubble, fable: twinFable, index: 1, share: 0.46)
+        let twinProof = proveSubBar(bubble: twinBubble, fable: twinFable, index: 1, share: 0.46, now: now)
         print("k. Work + Work 5h -> five-hour meter of Work none; Work 5h weekly meter only; \(twinProof)")
 
         // l. A Fable-only account: its empty placeholder draws no sub-bar, the hover row stays.
         let only = UsageClient.feedReadings(from: accounts(fableOnlyFeed), names: ["Studio"])
         assert(describe(bubble(only)) == "Studio=--" && hover(only).filter { $0.hoverOnly }.count == 1)
         assert(BubblePanel.fableReading(for: bubble(only)[0], in: only.filter { $0.hoverOnly }) == nil)
-        let onlyPlain = renderBubble(bubble(only), fable: [])
-        assert(difference(onlyPlain.rep, renderBubble(bubble(only), fable: only.filter { $0.hoverOnly }).rep) == nil)
+        let onlyPlain = renderBubble(bubble(only), fable: [], now: now)
+        assert(difference(onlyPlain.rep, renderBubble(bubble(only), fable: only.filter { $0.hoverOnly }, now: now).rep) == nil)
         // The same name with no weekly window, as a five-hour account, never gets one either.
         let fiveOnly = UsageClient.feedReadings(from: accounts(feedWithFable), names: ["Work"])
         assert(BubblePanel.fableReading(for: fiveOnly[0], in: fiveOnly.filter { $0.hoverOnly }) == nil)
@@ -390,7 +391,7 @@ struct FableHoverCheck {
                           reading("Codex", .codex, 63, hours: 0, week: true, account: "feed:Codex")]
             let fables = [reading("Claude Fable", .claude, 46, hours: 0, week: true, hoverOnly: true, account: "claude"),
                           reading("Work Fable", workColor, 12, hours: 0, week: true, hoverOnly: true, account: "feed:Work")]
-            let png = renderBubble(sample, fable: fables).rep.representation(using: .png, properties: [:])!
+            let png = renderBubble(sample, fable: fables, now: now).rep.representation(using: .png, properties: [:])!
             try! png.write(to: URL(fileURLWithPath: path))
             print("j. sample bubble written to \(path)")
         }
