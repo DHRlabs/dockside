@@ -102,6 +102,7 @@ Dockside reads the feed once a minute. The shape it expects:
 - `name` is matched exactly against the accounts you asked for; other accounts are ignored. `state` must be `ok` for the reading to count.
 - `at` is when the numbers were taken. `used` is a whole-number percent. `resetsAt` is when the window resets. Dates are ISO 8601.
 - Each account uses its `5 hours` and `week` windows, shown as `<name> 5h` and `<name>`.
+- An optional `Fable` window is a second weekly number for that model. It shows as `<name> Fable` in the hover card only, after the weekly row, and never in the bubble row.
 
 To show more than one account, and to set the order:
 
@@ -121,9 +122,10 @@ Other apps can add buttons to the strip at the right end of the Dock. The wire c
 bash Scripts/check-compact-layout.sh
 bash Scripts/check-feed-accounts.sh
 bash Scripts/check-button-reconnect.sh
+bash Scripts/check-fable-hover.sh
 ```
 
-check compact-layout geometry, feed account readings and colors, and button reconnect.
+check compact-layout geometry, feed account readings and colors, button reconnect, and the hover-only Fable rows.
 
 ## Credits and license
 

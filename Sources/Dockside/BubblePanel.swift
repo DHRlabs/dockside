@@ -126,6 +126,8 @@ final class BubblePanel: NSPanel {
     private let hoverCard = HoverCardPanel()
     private var dockFrame: CGRect?
     private var readings: [UsageReading] = []
+    /// The bubble row and compact view leave out the hover-only rows.
+    private var bubbleReadings: [UsageReading] = []
     private var theme: DocksideTheme = .glass
     private var openTimer: Timer?
     private var accessibilityObserver: NSObjectProtocol?
@@ -163,7 +165,8 @@ final class BubblePanel: NSPanel {
 
     func update(_ readings: [UsageReading]) {
         self.readings = readings
-        bubbleView.update(readings)
+        bubbleReadings = readings.filter { !$0.hoverOnly }
+        bubbleView.update(bubbleReadings)
         hoverCard.update(readings, theme: theme)
         if let dockFrame { place(leftOf: dockFrame) }
     }
@@ -183,10 +186,10 @@ final class BubblePanel: NSPanel {
             return
         }
         self.dockFrame = dockFrame
-        let count = max(1, readings.count)
+        let count = max(1, bubbleReadings.count)
         let height = dockFrame.height
         let available = dockFrame.minX - Self.dockGap - screen.frame.minX
-        let widths = Self.meterWidths(height: height, readings: readings)
+        let widths = Self.meterWidths(height: height, readings: bubbleReadings)
         if let layout = Self.meterLayout(height: height, available: available, count: count,
                                          naturalMeterWidth: widths.natural,
                                          minimumMeterWidth: widths.readableMinimum) {

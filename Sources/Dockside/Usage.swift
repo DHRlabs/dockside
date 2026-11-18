@@ -15,6 +15,20 @@ struct UsageReading {
     let resetsAt: Date?
     let observedAt: Date?
     let stateIsOK: Bool
+    /// Rows the hover card keeps and the bubble row and compact view skip.
+    let hoverOnly: Bool
+
+    init(label: String, provider: Provider, duration: TimeInterval?, used: Double?,
+         resetsAt: Date?, observedAt: Date?, stateIsOK: Bool, hoverOnly: Bool = false) {
+        self.label = label
+        self.provider = provider
+        self.duration = duration
+        self.used = used
+        self.resetsAt = resetsAt
+        self.observedAt = observedAt
+        self.stateIsOK = stateIsOK
+        self.hoverOnly = hoverOnly
+    }
 
     func isCurrent(at now: Date = Date()) -> Bool {
         guard stateIsOK, let used, used.isFinite, let resetsAt, resetsAt > now,
@@ -164,7 +178,21 @@ private enum UsageClient {
         }
         readings.append(claudeReading(cached.response.sevenDay, label: "Claude",
                                       duration: 7 * 86400, observedAt: cached.savedAt))
+        if let fable = fableReading(from: cached.response.limits, observedAt: cached.savedAt) {
+            readings.append(fable)
+        }
         return .readings(readings)
+    }
+
+    /// The weekly limit scoped to Fable, when the payload carries one with a number and a date.
+    static func fableReading(from limits: [ClaudeLimit]?, observedAt: Date) -> UsageReading? {
+        guard let limit = (limits ?? []).first(where: {
+            $0.kind == "weekly_scoped" && $0.scope?.model?.displayName == "Fable"
+        }), let percent = limit.percent, percent.isFinite,
+              let resetsAt = parseDate(limit.resetsAt) else { return nil }
+        return UsageReading(label: "Claude Fable", provider: .claude, duration: 7 * 86400,
+                            used: percent, resetsAt: resetsAt, observedAt: observedAt,
+                            stateIsOK: true, hoverOnly: true)
     }
 
     static func fetchFeed(from url: URL) async -> [FeedAccount]? {
@@ -198,24 +226,35 @@ private enum UsageClient {
             return [UsageReading.empty(name, provider: provider)]
         }
         let observedAt = parseDate(account.at)
-        let windows = (account.windows ?? []).compactMap { window -> (FeedWindow, TimeInterval)? in
+        let windows = (account.windows ?? []).compactMap { window -> (FeedWindow, TimeInterval, Int)? in
             switch window.label {
-            case "5 hours": return (window, 5 * 3600)
-            case "week": return (window, 7 * 86400)
+            case "5 hours": return (window, 5 * 3600, 0)
+            case "week": return (window, 7 * 86400, 1)
+            // The Fable weekly window rides along for the hover card only.
+            case "Fable": return (window, 7 * 86400, 2)
             default: return nil
             }
-        }.sorted { $0.0.label == "5 hours" && $1.0.label != "5 hours" }
+        }.sorted { $0.2 < $1.2 }
 
-        guard !windows.isEmpty else {
-            return [UsageReading.empty(name, provider: provider)]
-        }
-        return windows.map { window, duration in
-            let label = window.label == "5 hours" ? "\(name) 5h" : name
+        let rows = windows.map { window, duration, order -> UsageReading in
+            let label: String
+            switch order {
+            case 0: label = "\(name) 5h"
+            case 2: label = "\(name) Fable"
+            default: label = name
+            }
             return UsageReading(label: label, provider: provider,
                          duration: duration, used: window.used.map(Double.init),
                          resetsAt: parseDate(window.resetsAt), observedAt: observedAt,
-                         stateIsOK: account.state == "ok")
+                         stateIsOK: account.state == "ok", hoverOnly: order == 2)
         }
+        // A Fable window never takes the place of a reading the account would show
+        // without it: with no five-hour and no weekly window the account keeps its
+        // one empty meter, and the Fable row follows it in the hover card only.
+        guard rows.contains(where: { !$0.hoverOnly }) else {
+            return [UsageReading.empty(name, provider: provider)] + rows
+        }
+        return rows
     }
 
     private static func claudeReading(
