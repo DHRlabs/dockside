@@ -42,7 +42,9 @@ It is a native macOS app. No menu bar icon, no Dock icon, no windows to manage.
 - When CPU, GPU, or RAM stays pinned at 100% for 15 seconds, a light sweeps its meter while the whole arc
   heats from its own color through yellow and orange to red over 3 minutes, sweeping faster the longer it stays pinned.
   It stops the moment the meter drops off pinned.
-- Hover CPU, GPU, or RAM to see which app is using the most of it.
+  RAM never shows 100% (file cache fills the rest), so it counts as pinned while macOS memory pressure is
+  at warning or critical.
+- Hover CPU, GPU, or RAM to see which app is using the most of it; the RAM card also shows swap used.
 - Respects light and dark appearance and Reduce Transparency.
 - Opens at login. Right-click to turn that off or quit.
 
