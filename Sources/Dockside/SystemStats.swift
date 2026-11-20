@@ -80,14 +80,16 @@ private struct CPUCounters {
     var states: [UInt32]
 }
 
-// The apps using the most CPU and the most memory right now, read from the system process list on demand
-// (only when someone hovers a meter). Processes are grouped by name, so an app's helpers count together.
-// CPU is the Activity Monitor percent, where 100% is one full core.
+// The apps using the most CPU and the most memory right now, read on demand (only when someone hovers a
+// meter). Processes are grouped by the app they belong to, so a browser's or Claude's helpers count as that
+// app. CPU is the Activity Monitor percent, where 100% is one full core. Memory is each process's footprint,
+// the Activity Monitor Memory number, which includes memory macOS has compressed or swapped out; processes
+// of other users that macOS will not report are left out.
 public enum TopProcesses {
     public static func read() -> (cpu: (name: String, percent: Double)?, memory: (name: String, bytes: UInt64)?) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
-        process.arguments = ["-Aceo", "pcpu=,rss=,comm="]
+        process.arguments = ["-Aeo", "pid=,pcpu=,comm="]
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
@@ -98,14 +100,30 @@ public enum TopProcesses {
         var memory: [String: UInt64] = [:]
         for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
             let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
-            guard fields.count == 3, let percent = Double(fields[0]), let kilobytes = UInt64(fields[1]) else { continue }
-            let name = String(fields[2])
+            guard fields.count == 3, let pid = Int32(fields[0]), let percent = Double(fields[1]) else { continue }
+            let name = appName(String(fields[2]))
             cpu[name, default: 0] += percent
-            memory[name, default: 0] += kilobytes * 1024
+            if let bytes = footprint(pid) { memory[name, default: 0] += bytes }
         }
         let topCPU = cpu.max { $0.value < $1.value }.map { (name: $0.key, percent: $0.value) }
         let topMemory = memory.max { $0.value < $1.value }.map { (name: $0.key, bytes: $0.value) }
         return (topCPU, topMemory)
+    }
+
+    // The app a process belongs to: the outermost ".app" in its path, else the executable's own name.
+    private static func appName(_ path: String) -> String {
+        if let range = path.range(of: ".app/") {
+            return String(path[..<range.lowerBound].split(separator: "/").last ?? Substring(path))
+        }
+        return String(path.split(separator: "/").last ?? Substring(path))
+    }
+
+    private static func footprint(_ pid: Int32) -> UInt64? {
+        var info = rusage_info_v2()
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(pid, RUSAGE_INFO_V2, $0) }
+        }
+        return result == 0 ? info.ri_phys_footprint : nil
     }
 }
 
