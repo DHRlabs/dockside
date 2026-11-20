@@ -39,6 +39,9 @@ It is a native macOS app. No menu bar icon, no Dock icon, no windows to manage.
 - Hides and shows with the Dock, including in full-screen apps.
 - Three themes: **Glass**, **Pixel**, and **Rounded Ticks**. Right-click the bubble or strip and choose **Theme**.
 - A compact layout kicks in automatically when the room beside the Dock gets tight.
+- When CPU, GPU, or RAM stays pinned (95% or more) for 5 seconds, a light sweeps its meter while the whole
+  arc heats from its own color through yellow and orange to red, sweeping faster the longer it stays pinned.
+  It stops the moment the meter drops off pinned.
 - Respects light and dark appearance and Reduce Transparency.
 - Opens at login. Right-click to turn that off or quit.
 

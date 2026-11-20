@@ -5,6 +5,32 @@ final class SystemStatsView: NSView {
     private var reading: SystemStatsReading?
     private var theme: DocksideTheme = .glass
     private var compact = false
+    private var cometTimer: Timer?
+    private var lastCometFrame: TimeInterval?
+    // Each pinned meter, keyed by its label: when it became pinned and how far its comet has swept.
+    private var overloads: [String: (pinnedSince: TimeInterval, phase: Double)] = [:]
+
+    // A meter at or above this share counts as pinned.
+    private static let pinnedPercent = 95.0
+    // The comet starts only after a meter has stayed pinned this long, so a brief touch does nothing.
+    private static let engageAfter = 5.0
+    // Seconds of comet before it reaches full red and full speed.
+    private static let fullHeatAfter = 60.0
+    // A sweep cycle starts slow and shortens as the meter stays pinned. Each sweep takes the first
+    // part of its cycle; the rest is a short pause before the next one.
+    private static let coolCycle = 2.0
+    private static let hotCycle = 0.7
+    private static let cometSweepShare = 0.7
+    // How many dashes the fading tail covers behind the bright head.
+    private static let cometTrail = 3.5
+    // The whole arc heats from its own color through yellow and orange to red.
+    private static let heatColors = [
+        NSColor(srgbRed: 1, green: 0.86, blue: 0.25, alpha: 1),
+        NSColor(srgbRed: 1, green: 0.55, blue: 0.15, alpha: 1),
+        NSColor(srgbRed: 1, green: 0.2, blue: 0.15, alpha: 1)
+    ]
+    // How far toward white the light riding the arc is, so it reads as a hot spot on any arc color.
+    private static let lightWhiteness: CGFloat = 0.7
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -33,8 +59,107 @@ final class SystemStatsView: NSView {
 
     func update(_ reading: SystemStatsReading) {
         self.reading = reading
+        let now = ProcessInfo.processInfo.systemUptime
+        for (label, value) in [("CPU", reading.cpuPercent), ("GPU", reading.gpuPercent), ("RAM", reading.memoryPercent)] {
+            if !Self.isPinned(value) {
+                overloads[label] = nil
+            } else if overloads[label] == nil {
+                overloads[label] = (pinnedSince: now, phase: 0)
+            }
+        }
         updateAccessibilityValue()
+        updateCometTimer()
         needsDisplay = true
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        updateCometTimer()
+    }
+
+    private static func isPinned(_ value: Double?) -> Bool {
+        guard let value, value.isFinite else { return false }
+        return value >= pinnedPercent
+    }
+
+    // How hot a meter's comet runs, 0 when it first starts to 1 at full red and speed; nil while the
+    // meter is not pinned or has not stayed pinned long enough.
+    private func heat(_ label: String, now: TimeInterval) -> Double? {
+        guard let overload = overloads[label] else { return nil }
+        let pinnedFor = now - overload.pinnedSince
+        guard pinnedFor >= Self.engageAfter else { return nil }
+        return min(1, (pinnedFor - Self.engageAfter) / Self.fullHeatAfter)
+    }
+
+    // Ticks about 30 times a second only while a meter is pinned and the view is in a window.
+    private func updateCometTimer() {
+        if !overloads.isEmpty, window != nil {
+            guard cometTimer == nil else { return }
+            let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.advanceComets() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            cometTimer = timer
+        } else {
+            cometTimer?.invalidate()
+            cometTimer = nil
+            lastCometFrame = nil
+        }
+    }
+
+    // Moves each running comet along by the time since the last tick, faster as it heats up.
+    private func advanceComets() {
+        let now = ProcessInfo.processInfo.systemUptime
+        let elapsed = lastCometFrame.map { min(0.1, now - $0) } ?? 0
+        lastCometFrame = now
+        var running = false
+        for (label, overload) in overloads {
+            guard let heat = heat(label, now: now) else { continue }
+            running = true
+            let cycle = Self.coolCycle + (Self.hotCycle - Self.coolCycle) * heat
+            overloads[label]?.phase = (overload.phase + elapsed / cycle).truncatingRemainder(dividingBy: 1)
+        }
+        if running, window?.isVisible == true { needsDisplay = true }
+    }
+
+    // A running comet on a meter: the color the whole arc takes, the color of the light riding it, and
+    // where the light's head sits in the meter's own units (nil between sweeps). nil when no comet runs.
+    // `lead` lets the head fade in just before the first dash.
+    private func comet(_ label: String, accent: NSColor, span: Double, trail: Double,
+                       lead: Double) -> (arc: NSColor, light: NSColor, head: Double?)? {
+        guard let heat = heat(label, now: ProcessInfo.processInfo.systemUptime),
+              let phase = overloads[label]?.phase else { return nil }
+        let arc = NSGradient(colors: [accent] + Self.heatColors)?.interpolatedColor(atLocation: CGFloat(heat)) ?? accent
+        let light = arc.blended(withFraction: Self.lightWhiteness, of: .white) ?? .white
+        let head = phase < Self.cometSweepShare
+            ? -lead + phase / Self.cometSweepShare * (span + trail + lead) : nil
+        return (arc, light, head)
+    }
+
+    // Full brightness at the head, over half a dash ahead of it, and a tail that drops off quickly
+    // behind it and then lingers faintly, like a comet.
+    private func cometIntensity(index: Int, head: Double?) -> CGFloat {
+        guard let head else { return 0 }
+        let behind = head - Double(index)
+        if behind < 0 { return CGFloat(max(0, 1 + behind * 2)) }
+        return CGFloat(pow(max(0, 1 - behind / Self.cometTrail), 1.6))
+    }
+
+    private func cometBlend(_ base: NSColor, toward color: NSColor?, intensity: CGFloat) -> NSColor {
+        guard let color, intensity > 0 else { return base }
+        return base.blended(withFraction: intensity, of: color) ?? base
+    }
+
+    private func withCometGlow(_ intensity: CGFloat, color: NSColor, draw: () -> Void) {
+        guard intensity > 0 else { draw(); return }
+        NSGraphicsContext.saveGraphicsState()
+        let glow = NSShadow()
+        glow.shadowColor = color.withAlphaComponent(0.85 * intensity)
+        glow.shadowBlurRadius = 4 * intensity
+        glow.shadowOffset = .zero
+        glow.set()
+        draw()
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     func setTheme(_ theme: DocksideTheme) {
@@ -105,6 +230,7 @@ final class SystemStatsView: NSView {
             let tickWidth = outerWidth * 0.044
             let tickRadius = (outerWidth - tickWidth) / 2
             let tickLength = outerWidth * 0.10
+            let comet = comet(label, accent: accent, span: 13, trail: Self.cometTrail, lead: 0.5)
             for index in 0..<13 {
                 let angle = Double.pi - Double.pi * Double(index) / 12
                 let outer = NSPoint(x: center.x + CGFloat(cos(angle)) * tickRadius,
@@ -117,16 +243,24 @@ final class SystemStatsView: NSView {
                 tick.lineCapStyle = .round
                 tick.move(to: inner)
                 tick.line(to: outer)
-                (index < filled ? accent : trackColor(dark: dark)).setStroke()
-                tick.stroke()
+                let intensity = cometIntensity(index: index, head: comet?.head)
+                let color = cometBlend(index < filled ? comet?.arc ?? accent : trackColor(dark: dark),
+                                       toward: comet?.light, intensity: intensity)
+                color.setStroke()
+                withCometGlow(intensity, color: color) { tick.stroke() }
             }
         } else if let value, value.isFinite {
             strokeGlassSemicircle(center: center, radius: radius, width: stroke,
                                   fraction: nil, color: trackColor(dark: dark))
             let fraction = min(1, max(0, value / 100))
+            let comet = comet(label, accent: accent, span: 1, trail: 0.3, lead: 0.02)
             if fraction > 0 {
                 strokeGlassSemicircle(center: center, radius: radius, width: stroke,
-                                      fraction: fraction, color: accent)
+                                      fraction: fraction, color: comet?.arc ?? accent)
+            }
+            if let comet, let head = comet.head {
+                strokeGlassComet(center: center, radius: radius, width: stroke,
+                                 head: head, tail: 0.3, color: comet.light)
             }
         } else {
             strokeGlassSemicircle(center: center, radius: radius, width: stroke,
@@ -211,6 +345,29 @@ final class SystemStatsView: NSView {
         path.stroke()
     }
 
+    // A short heat-colored streak riding the arc, brightest at the head and fading back along its tail.
+    private func strokeGlassComet(center: NSPoint, radius: CGFloat, width: CGFloat, head: Double, tail: Double,
+                                  color: NSColor) {
+        let slices = 8
+        for slice in 0..<slices {
+            let from = max(0, head - tail * Double(slices - slice) / Double(slices))
+            let to = min(1, head - tail * Double(slices - slice - 1) / Double(slices))
+            guard to > from else { continue }
+            let intensity = CGFloat(slice + 1) / CGFloat(slices)
+            let color = color.withAlphaComponent(intensity)
+            let startAngle = 180 - CGFloat(180 * from)
+            let path = NSBezierPath()
+            path.move(to: NSPoint(x: center.x + radius * cos(startAngle * .pi / 180),
+                                  y: center.y + radius * sin(startAngle * .pi / 180)))
+            path.appendArc(withCenter: center, radius: radius, startAngle: startAngle,
+                           endAngle: 180 - CGFloat(180 * to), clockwise: true)
+            path.lineWidth = width
+            path.lineCapStyle = slice == slices - 1 ? .round : .butt
+            color.setStroke()
+            withCometGlow(intensity, color: color) { path.stroke() }
+        }
+    }
+
     private func drawPixelMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
         let archWidth = height * (compact ? 0.80 : 0.96)
         let cpuCenterX = bounds.minX + height * (compact ? 0.58 : 0.69)
@@ -240,7 +397,7 @@ final class SystemStatsView: NSView {
         let side = max(2.2, min(4.5, height * (compact ? 0.064 : 0.069)))
         let fraction = value.flatMap { $0.isFinite ? min(1, max(0, $0 / 100)) : nil } ?? 0
         drawPixelArch(baseline: baseline, radius: (width - side) / 2, side: side,
-                      fraction: fraction, color: accent, dark: dark)
+                      fraction: fraction, label: label, color: accent, dark: dark)
 
         let number = value.flatMap { $0.isFinite ? Int($0.rounded()) : nil }
         let text = number.map { "\($0)%" } ?? "--%"
@@ -261,11 +418,13 @@ final class SystemStatsView: NSView {
     }
 
     private func drawPixelArch(baseline: NSPoint, radius: CGFloat, side: CGFloat,
-                               fraction: Double, color: NSColor, dark: Bool) {
+                               fraction: Double, label: String, color: NSColor, dark: Bool) {
         let gap: CGFloat = 0.7
         let count = max(8, Int(ceil(Double.pi * Double(radius) / Double(side + gap))))
         let filled = Int((fraction * Double(count)).rounded(.down))
+        let comet = comet(label, accent: color, span: Double(count), trail: Self.cometTrail, lead: 0.5)
         for index in 0..<count {
+            let intensity = cometIntensity(index: index, head: comet?.head)
             let angle = Double.pi - Double.pi * Double(index) / Double(count - 1)
             for row in 0..<2 {
                 let rowRadius = radius - CGFloat(row) * (side + gap)
@@ -273,7 +432,8 @@ final class SystemStatsView: NSView {
                                     y: baseline.y + CGFloat(sin(angle)) * rowRadius)
                 let block = NSRect(x: point.x - side / 2, y: point.y - side / 2,
                                    width: side, height: side)
-                (index < filled ? color : trackColor(dark: dark)).setFill()
+                cometBlend(index < filled ? comet?.arc ?? color : trackColor(dark: dark),
+                           toward: comet?.light, intensity: intensity).setFill()
                 block.fill()
             }
         }
