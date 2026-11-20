@@ -7,6 +7,8 @@ public struct SystemStatsReading: Sendable {
     public var gpuPercent: Double?
     public var memoryPercent: Double?
     public var temperatureCelsius: Double?
+    // The app that used the most GPU time since the last sample, with its share of the GPU.
+    public var topGPUApp: (name: String, percent: Double)?
     public var sampledAt: Date
 
     public init(
@@ -14,12 +16,14 @@ public struct SystemStatsReading: Sendable {
         gpuPercent: Double? = nil,
         memoryPercent: Double? = nil,
         temperatureCelsius: Double? = nil,
+        topGPUApp: (name: String, percent: Double)? = nil,
         sampledAt: Date = Date()
     ) {
         self.cpuPercent = Self.percentage(cpuPercent)
         self.gpuPercent = Self.percentage(gpuPercent)
         self.memoryPercent = Self.percentage(memoryPercent)
         self.temperatureCelsius = temperatureCelsius
+        self.topGPUApp = topGPUApp
         self.sampledAt = sampledAt
     }
 
@@ -69,11 +73,42 @@ private struct CPUCounters {
     var states: [UInt32]
 }
 
+// The apps using the most CPU and the most memory right now, read from the system process list on demand
+// (only when someone hovers a meter). Processes are grouped by name, so an app's helpers count together.
+// CPU is the Activity Monitor percent, where 100% is one full core.
+public enum TopProcesses {
+    public static func read() -> (cpu: (name: String, percent: Double)?, memory: (name: String, bytes: UInt64)?) {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/ps")
+        process.arguments = ["-Aceo", "pcpu=,rss=,comm="]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = FileHandle.nullDevice
+        guard (try? process.run()) != nil else { return (nil, nil) }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        var cpu: [String: Double] = [:]
+        var memory: [String: UInt64] = [:]
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let fields = line.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+            guard fields.count == 3, let percent = Double(fields[0]), let kilobytes = UInt64(fields[1]) else { continue }
+            let name = String(fields[2])
+            cpu[name, default: 0] += percent
+            memory[name, default: 0] += kilobytes * 1024
+        }
+        let topCPU = cpu.max { $0.value < $1.value }.map { (name: $0.key, percent: $0.value) }
+        let topMemory = memory.max { $0.value < $1.value }.map { (name: $0.key, bytes: $0.value) }
+        return (topCPU, topMemory)
+    }
+}
+
 // All sampler state is confined to the poller's serial sampling queue.
 private final class SystemStatsSampler: @unchecked Sendable {
     private var previousCPU: CPUCounters?
     private var previousGPU: (busy: UInt64, at: UInt64)?
     private var lastGPUPercent: Double?
+    private var previousGPUApps: [String: UInt64] = [:]
+    private var topGPUApp: (name: String, percent: Double)?
     // Share of each new reading blended in per sample: about a 6 second blend at the 2 s sample rate.
     private static let smoothing = 0.3
     private var smoothedCPU: Double?
@@ -109,11 +144,13 @@ private final class SystemStatsSampler: @unchecked Sendable {
         }
         if counters == nil { previousCPU = nil }
 
+        let gpuPercent = smooth(readGPUPercent(), &smoothedGPU)
         return SystemStatsReading(
             cpuPercent: smooth(cpuPercent, &smoothedCPU),
-            gpuPercent: smooth(readGPUPercent(), &smoothedGPU),
+            gpuPercent: gpuPercent,
             memoryPercent: smooth(readMemoryPercent(), &smoothedMemory),
             temperatureCelsius: smooth(temperatures.readAverageCPU(), &smoothedTemperature),
+            topGPUApp: topGPUApp,
             sampledAt: Date()
         )
     }
@@ -151,12 +188,14 @@ private final class SystemStatsSampler: @unchecked Sendable {
         return CPUCounters(states: states)
     }
 
-    // Total GPU time every app has used so far, in nanoseconds, from the accelerator's per-app counters.
-    private func readGPUBusyNanoseconds() -> UInt64? {
+    // Total GPU time every app has used so far, in nanoseconds, from the accelerator's per-app counters,
+    // and the same total per app name (the name in each client's "pid N, name" creator).
+    private func readGPUBusyNanoseconds() -> (total: UInt64, apps: [String: UInt64])? {
         var accelerators: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("AGXAccelerator"), &accelerators) == KERN_SUCCESS else { return nil }
         defer { IOObjectRelease(accelerators) }
         var total: UInt64 = 0
+        var perApp: [String: UInt64] = [:]
         var found = false
         var accelerator = IOIteratorNext(accelerators)
         while accelerator != 0 {
@@ -170,20 +209,36 @@ private final class SystemStatsSampler: @unchecked Sendable {
                 let property = IORegistryEntryCreateCFProperty(child, "AppUsage" as CFString, kCFAllocatorDefault, 0)
                 guard let apps = property?.takeRetainedValue() as? [[String: Any]] else { continue }
                 found = true
-                for app in apps { total &+= (app["accumulatedGPUTime"] as? NSNumber)?.uint64Value ?? 0 }
+                var clientTotal: UInt64 = 0
+                for app in apps { clientTotal &+= (app["accumulatedGPUTime"] as? NSNumber)?.uint64Value ?? 0 }
+                total &+= clientTotal
+                let creator = IORegistryEntryCreateCFProperty(child, "IOUserClientCreator" as CFString, kCFAllocatorDefault, 0)?
+                    .takeRetainedValue() as? String
+                if let name = creator?.split(separator: ",", maxSplits: 1).last?.trimmingCharacters(in: .whitespaces),
+                   !name.isEmpty {
+                    perApp[name, default: 0] &+= clientTotal
+                }
             }
         }
-        return found ? total : nil
+        return found ? (total, perApp) : nil
     }
 
     // ponytail: an app exiting drops its counter; that sample repeats the last percent instead of blanking.
     private func readGPUPercent() -> Double? {
         let now = DispatchTime.now().uptimeNanoseconds
-        guard let busy = readGPUBusyNanoseconds() else { previousGPU = nil; return nil }
-        defer { previousGPU = (busy, now) }
+        guard let busy = readGPUBusyNanoseconds() else { previousGPU = nil; previousGPUApps = [:]; topGPUApp = nil; return nil }
+        defer { previousGPU = (busy.total, now); previousGPUApps = busy.apps }
         guard let previousGPU, now > previousGPU.at else { return nil }
-        guard busy >= previousGPU.busy else { return lastGPUPercent }
-        lastGPUPercent = 100 * Double(busy - previousGPU.busy) / Double(now - previousGPU.at)
+        let elapsed = Double(now - previousGPU.at)
+        // An app seen for the first time has no earlier count to compare, so it waits a sample.
+        var top: (name: String, used: UInt64)?
+        for (name, used) in busy.apps {
+            guard let before = previousGPUApps[name], used > before, used - before > (top?.used ?? 0) else { continue }
+            top = (name, used - before)
+        }
+        topGPUApp = top.map { (name: $0.name, percent: min(100, 100 * Double($0.used) / elapsed)) }
+        guard busy.total >= previousGPU.busy else { return lastGPUPercent }
+        lastGPUPercent = 100 * Double(busy.total - previousGPU.busy) / elapsed
         return lastGPUPercent
     }
 
