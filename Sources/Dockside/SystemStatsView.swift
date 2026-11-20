@@ -228,27 +228,37 @@ final class SystemStatsView: NSView {
         }
     }
 
+    // The process list takes a few tenths of a second, so it is read off the main thread; the card shows
+    // only if the same meter is still hovered when the answer comes back.
     private func showHover(_ label: String, centerX: CGFloat) {
-        guard hoveredMeter == label, let window, window.isVisible else { return }
-        let anchor = window.convertPoint(toScreen: convert(NSPoint(x: centerX, y: bounds.maxY), to: nil))
-        hoverPanel.show(topAppText(label), centeredAbove: anchor)
+        guard hoveredMeter == label, window?.isVisible == true else { return }
+        let gpu = reading?.topGPUApp
+        let swap = reading?.swapUsedBytes
+        DispatchQueue.global(qos: .userInitiated).async {
+            let text = Self.topAppText(label, gpu: gpu, swap: swap)
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.hoveredMeter == label, let window = self.window, window.isVisible else { return }
+                let anchor = window.convertPoint(toScreen: self.convert(NSPoint(x: centerX, y: self.bounds.maxY), to: nil))
+                self.hoverPanel.show(text, centeredAbove: anchor)
+            }
+        }
     }
 
-    func topAppText(_ label: String) -> String {
+    nonisolated static func topAppText(_ label: String, gpu: (name: String, percent: Double)?, swap: UInt64?) -> String {
         switch label {
         case "GPU":
-            guard let top = reading?.topGPUApp else { return "Top GPU: none right now" }
+            guard let top = gpu else { return "Top GPU: none right now" }
             return "Top GPU: \(top.name) (\(Int(top.percent.rounded()))%)"
         case "CPU":
             guard let top = TopProcesses.read().cpu else { return "Top CPU: unavailable" }
             return "Top CPU: \(top.name) (\(Int(top.percent.rounded()))%)"
         default:
-            let swap = reading?.swapUsedBytes.map {
+            let swapText = swap.map {
                 " · Swap \(ByteCountFormatter.string(fromByteCount: Int64(clamping: $0), countStyle: .memory))"
             } ?? ""
-            guard let top = TopProcesses.read().memory else { return "Top RAM: unavailable\(swap)" }
+            guard let top = TopProcesses.read().memory else { return "Top RAM: unavailable\(swapText)" }
             let size = ByteCountFormatter.string(fromByteCount: Int64(clamping: top.bytes), countStyle: .memory)
-            return "Top RAM: \(top.name) (\(size))\(swap)"
+            return "Top RAM: \(top.name) (\(size))\(swapText)"
         }
     }
 
