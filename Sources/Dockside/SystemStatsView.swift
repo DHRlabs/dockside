@@ -66,8 +66,12 @@ final class SystemStatsView: NSView {
     func update(_ reading: SystemStatsReading) {
         self.reading = reading
         let now = ProcessInfo.processInfo.systemUptime
-        for (label, value) in [("CPU", reading.cpuPercent), ("GPU", reading.gpuPercent), ("RAM", reading.memoryPercent)] {
-            if !Self.isPinned(value) {
+        // RAM never shows 100% (file cache fills the rest), so it counts as pinned while macOS reports
+        // memory pressure at warning or critical instead.
+        let ramPinned = (reading.memoryPressure ?? 0) >= 2
+        for (label, pinned) in [("CPU", Self.isPinned(reading.cpuPercent)), ("GPU", Self.isPinned(reading.gpuPercent)),
+                                ("RAM", ramPinned)] {
+            if !pinned {
                 overloads[label] = nil
             } else if overloads[label] == nil {
                 overloads[label] = (pinnedSince: now, phase: 0)
@@ -239,9 +243,12 @@ final class SystemStatsView: NSView {
             guard let top = TopProcesses.read().cpu else { return "Top CPU: unavailable" }
             return "Top CPU: \(top.name) (\(Int(top.percent.rounded()))%)"
         default:
-            guard let top = TopProcesses.read().memory else { return "Top RAM: unavailable" }
+            let swap = reading?.swapUsedBytes.map {
+                " · Swap \(ByteCountFormatter.string(fromByteCount: Int64(clamping: $0), countStyle: .memory))"
+            } ?? ""
+            guard let top = TopProcesses.read().memory else { return "Top RAM: unavailable\(swap)" }
             let size = ByteCountFormatter.string(fromByteCount: Int64(clamping: top.bytes), countStyle: .memory)
-            return "Top RAM: \(top.name) (\(size))"
+            return "Top RAM: \(top.name) (\(size))\(swap)"
         }
     }
 
