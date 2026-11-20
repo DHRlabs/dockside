@@ -9,13 +9,16 @@ final class SystemStatsView: NSView {
     private var lastCometFrame: TimeInterval?
     // Each pinned meter, keyed by its label: when it became pinned and how far its comet has swept.
     private var overloads: [String: (pinnedSince: TimeInterval, phase: Double)] = [:]
+    private let hoverPanel = MeterHoverPanel()
+    private var hoveredMeter: String?
+    private var hoverTimer: Timer?
 
-    // A meter at or above this share counts as pinned.
-    private static let pinnedPercent = 95.0
+    // A meter counts as pinned only while it shows 100% (98 or 99% is not pinned).
+    private static let pinnedPercent = 99.5
     // The comet starts only after a meter has stayed pinned this long, so a brief touch does nothing.
-    private static let engageAfter = 5.0
-    // Seconds of comet before it reaches full red and full speed.
-    private static let fullHeatAfter = 60.0
+    private static let engageAfter = 15.0
+    // Seconds of comet before it reaches full red and full speed (3 minutes).
+    private static let fullHeatAfter = 180.0
     // A sweep cycle starts slow and shortens as the meter stays pinned. Each sweep takes the first
     // part of its cycle; the rest is a short pause before the next one.
     private static let coolCycle = 2.0
@@ -37,6 +40,9 @@ final class SystemStatsView: NSView {
         setAccessibilityElement(true)
         setAccessibilityLabel("CPU, GPU, RAM, and average CPU temperature")
         updateAccessibilityValue()
+        addTrackingArea(NSTrackingArea(rect: .zero,
+                                       options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect],
+                                       owner: self, userInfo: nil))
     }
 
     required init?(coder: NSCoder) { nil }
@@ -174,6 +180,71 @@ final class SystemStatsView: NSView {
         needsDisplay = true
     }
 
+    // Where the CPU, GPU and RAM meters sit in the current theme and size: their shared width and centers.
+    private func usageMeterLayout(height: CGFloat) -> (width: CGFloat, cpu: CGFloat, gpu: CGFloat, ram: CGFloat) {
+        if theme == .pixel {
+            return (height * (compact ? 0.80 : 0.96),
+                    bounds.minX + height * (compact ? 0.58 : 0.69),
+                    bounds.minX + height * (compact ? 1.60 : 1.92),
+                    bounds.minX + height * (compact ? 2.62 : 3.15))
+        }
+        return (compact ? min(height * 0.84, 46) : height * 0.92,
+                bounds.minX + height * (compact ? 0.68 : 0.70),
+                bounds.minX + height * (compact ? 1.62 : 1.80),
+                bounds.minX + height * (compact ? 2.56 : 2.90))
+    }
+
+    // Hovering a CPU, GPU or RAM meter shows a small card above it naming the app using the most of it.
+    override func mouseEntered(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
+    override func mouseMoved(with event: NSEvent) { hover(at: convert(event.locationInWindow, from: nil)) }
+    override func mouseExited(with event: NSEvent) { hover(at: nil) }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { hover(at: nil) }
+    }
+
+    private func meter(at point: NSPoint) -> (label: String, centerX: CGFloat)? {
+        let meters = usageMeterLayout(height: bounds.height)
+        return [("CPU", meters.cpu), ("GPU", meters.gpu), ("RAM", meters.ram)]
+            .first { abs($0.1 - point.x) <= meters.width / 2 }
+            .map { (label: $0.0, centerX: $0.1) }
+    }
+
+    private func hover(at point: NSPoint?) {
+        let target = point.flatMap(meter(at:))
+        guard target?.label != hoveredMeter else { return }
+        hoveredMeter = target?.label
+        hoverTimer?.invalidate()
+        hoverTimer = nil
+        hoverPanel.orderOut(nil)
+        guard let target else { return }
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 0.3, repeats: false) { [weak self] _ in
+            MainActor.assumeIsolated { self?.showHover(target.label, centerX: target.centerX) }
+        }
+    }
+
+    private func showHover(_ label: String, centerX: CGFloat) {
+        guard hoveredMeter == label, let window, window.isVisible else { return }
+        let anchor = window.convertPoint(toScreen: convert(NSPoint(x: centerX, y: bounds.maxY), to: nil))
+        hoverPanel.show(topAppText(label), centeredAbove: anchor)
+    }
+
+    func topAppText(_ label: String) -> String {
+        switch label {
+        case "GPU":
+            guard let top = reading?.topGPUApp else { return "Top GPU: none right now" }
+            return "Top GPU: \(top.name) (\(Int(top.percent.rounded()))%)"
+        case "CPU":
+            guard let top = TopProcesses.read().cpu else { return "Top CPU: unavailable" }
+            return "Top CPU: \(top.name) (\(Int(top.percent.rounded()))%)"
+        default:
+            guard let top = TopProcesses.read().memory else { return "Top RAM: unavailable" }
+            let size = ByteCountFormatter.string(fromByteCount: Int64(clamping: top.bytes), countStyle: .memory)
+            return "Top RAM: \(top.name) (\(size))"
+        }
+    }
+
     override func draw(_ dirtyRect: NSRect) {
         let height = bounds.height
         guard height > 0, bounds.width > 0 else { return }
@@ -187,10 +258,11 @@ final class SystemStatsView: NSView {
     }
 
     private func drawGlassMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
-        let archWidth = compact ? min(height * 0.84, 46) : height * 0.92
-        let cpuCenterX = bounds.minX + height * (compact ? 0.68 : 0.70)
-        let gpuCenterX = bounds.minX + height * (compact ? 1.62 : 1.80)
-        let ramCenterX = bounds.minX + height * (compact ? 2.56 : 2.90)
+        let meters = usageMeterLayout(height: height)
+        let archWidth = meters.width
+        let cpuCenterX = meters.cpu
+        let gpuCenterX = meters.gpu
+        let ramCenterX = meters.ram
         let temperatureCenterX = bounds.minX + height * (compact ? 3.45 : 3.97)
         let temperatureWidth = height * (compact ? 0.72 : 0.84)
 
@@ -369,10 +441,11 @@ final class SystemStatsView: NSView {
     }
 
     private func drawPixelMeters(height: CGFloat, palette: (accent: NSColor, warm: NSColor), dark: Bool) {
-        let archWidth = height * (compact ? 0.80 : 0.96)
-        let cpuCenterX = bounds.minX + height * (compact ? 0.58 : 0.69)
-        let gpuCenterX = bounds.minX + height * (compact ? 1.60 : 1.92)
-        let ramCenterX = bounds.minX + height * (compact ? 2.62 : 3.15)
+        let meters = usageMeterLayout(height: height)
+        let archWidth = meters.width
+        let cpuCenterX = meters.cpu
+        let gpuCenterX = meters.gpu
+        let ramCenterX = meters.ram
         let temperatureCenterX = bounds.minX + bounds.width * 0.878
         drawPixelUsageArch(reading?.cpuPercent, label: "CPU", centerX: cpuCenterX,
                            width: archWidth, height: height, accent: palette.accent, dark: dark)
@@ -510,6 +583,43 @@ final class SystemStatsView: NSView {
         "9": [0b01110, 0b10001, 0b10001, 0b01111, 0b00001, 0b00001, 0b01110],
         "-": [0b00000, 0b00000, 0b00000, 0b11111, 0b00000, 0b00000, 0b00000]
     ]
+}
+
+// The small card above a hovered meter. It takes no mouse events, so it never gets in the strip's way.
+@MainActor
+private final class MeterHoverPanel: NSPanel {
+    private let label = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
+                   styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        let content = NSView()
+        label.font = .systemFont(ofSize: 12, weight: .medium)
+        label.textColor = .labelColor
+        content.addSubview(label)
+        contentView = GlassBackdropView(contentView: content, cornerRadius: 10)
+        level = .statusBar
+        collectionBehavior = [.canJoinAllSpaces, .stationary, .fullScreenAuxiliary, .ignoresCycle]
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        ignoresMouseEvents = true
+        hidesOnDeactivate = false
+        isReleasedWhenClosed = false
+    }
+
+    func show(_ text: String, centeredAbove point: NSPoint) {
+        label.stringValue = text
+        label.sizeToFit()
+        label.setFrameOrigin(NSPoint(x: 10, y: 6))
+        let size = NSSize(width: ceil(label.frame.width) + 20, height: ceil(label.frame.height) + 12)
+        var frame = NSRect(x: point.x - size.width / 2, y: point.y + 8, width: size.width, height: size.height)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(point) }) {
+            frame.origin.x = min(max(frame.minX, screen.frame.minX), screen.frame.maxX - size.width)
+        }
+        setFrame(frame, display: true)
+        orderFrontRegardless()
+    }
 }
 
 private func fontHeight(_ font: NSFont) -> CGFloat {
