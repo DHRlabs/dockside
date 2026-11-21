@@ -175,6 +175,13 @@ final class SystemStatsView: NSView {
         (0..<count).first { Double($0) / Double(count - 1) > swapZoneStart } ?? count
     }
 
+    // How many dashes a meter lights. RAM's dashes before the swap zone cover 0 to 85%, rounded to the
+    // nearest dash, so a reading near its usual top meets the swap zone with no dark dash in between.
+    private static func filledDashes(label: String, fraction: Double, count: Int, swapFirst: Int) -> Int {
+        guard label == "RAM" else { return Int((fraction * Double(count)).rounded(.down)) }
+        return Int((min(1, fraction / swapZoneStart) * Double(swapFirst)).rounded())
+    }
+
     // Full brightness at the head, over half a dash ahead of it, and a tail that drops off quickly
     // behind it and then lingers faintly, like a comet.
     private func cometIntensity(index: Int, head: Double?) -> CGFloat {
@@ -344,12 +351,12 @@ final class SystemStatsView: NSView {
         let center = NSPoint(x: centerX, y: baselineY)
         if theme == .ticks {
             let fraction = value.flatMap { $0.isFinite ? min(1, max(0, $0 / 100)) : nil } ?? 0
-            let filled = Int(fraction * 13)
             let tickWidth = outerWidth * 0.044
             let tickRadius = (outerWidth - tickWidth) / 2
             let tickLength = outerWidth * 0.10
             let comet = comet(label, accent: accent, span: 13, trail: Self.cometTrail, lead: 0.5)
             let swapFirst = Self.firstSwapDash(count: 13)
+            let filled = Self.filledDashes(label: label, fraction: fraction, count: 13, swapFirst: swapFirst)
             let swap = label == "RAM" ? swapZone(span: Double(13 - swapFirst), trail: Self.cometTrail, lead: 0.5) : nil
             for index in 0..<13 {
                 let angle = Double.pi - Double.pi * Double(index) / 12
@@ -570,9 +577,9 @@ final class SystemStatsView: NSView {
                                fraction: Double, label: String, color: NSColor, dark: Bool) {
         let gap: CGFloat = 0.7
         let count = max(8, Int(ceil(Double.pi * Double(radius) / Double(side + gap))))
-        let filled = Int((fraction * Double(count)).rounded(.down))
         let comet = comet(label, accent: color, span: Double(count), trail: Self.cometTrail, lead: 0.5)
         let swapFirst = Self.firstSwapDash(count: count)
+        let filled = Self.filledDashes(label: label, fraction: fraction, count: count, swapFirst: swapFirst)
         let swap = label == "RAM" ? swapZone(span: Double(count - swapFirst), trail: Self.cometTrail, lead: 0.5) : nil
         for index in 0..<count {
             let zone = index >= swapFirst ? swap : nil
