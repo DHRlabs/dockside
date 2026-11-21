@@ -175,11 +175,12 @@ final class SystemStatsView: NSView {
         (0..<count).first { Double($0) / Double(count - 1) > swapZoneStart } ?? count
     }
 
-    // How many dashes a meter lights. RAM's dashes before the swap zone cover 0 to 85%, rounded to the
-    // nearest dash, so a reading near its usual top meets the swap zone with no dark dash in between.
+    // How many dashes a meter lights. RAM's dashes before the swap zone cover 0 to 85%, and a dash lights as
+    // soon as RAM reaches into it, so RAM's usual readings (about 80% and up) meet the swap zone with no
+    // dark dash in between.
     private static func filledDashes(label: String, fraction: Double, count: Int, swapFirst: Int) -> Int {
         guard label == "RAM" else { return Int((fraction * Double(count)).rounded(.down)) }
-        return Int((min(1, fraction / swapZoneStart) * Double(swapFirst)).rounded())
+        return Int((min(1, fraction / swapZoneStart) * Double(swapFirst)).rounded(.up))
     }
 
     // Full brightness at the head, over half a dash ahead of it, and a tail that drops off quickly
