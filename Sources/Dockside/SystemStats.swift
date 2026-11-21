@@ -9,8 +9,6 @@ public struct SystemStatsReading: Sendable {
     public var temperatureCelsius: Double?
     // The app that used the most GPU time since the last sample, with its share of the GPU.
     public var topGPUApp: (name: String, percent: Double)?
-    // macOS memory pressure: 1 normal, 2 warning, 4 critical (Activity Monitor's green, yellow, red).
-    public var memoryPressure: Int?
     public var swapUsedBytes: UInt64?
     public var sampledAt: Date
 
@@ -20,7 +18,6 @@ public struct SystemStatsReading: Sendable {
         memoryPercent: Double? = nil,
         temperatureCelsius: Double? = nil,
         topGPUApp: (name: String, percent: Double)? = nil,
-        memoryPressure: Int? = nil,
         swapUsedBytes: UInt64? = nil,
         sampledAt: Date = Date()
     ) {
@@ -29,7 +26,6 @@ public struct SystemStatsReading: Sendable {
         self.memoryPercent = Self.percentage(memoryPercent)
         self.temperatureCelsius = temperatureCelsius
         self.topGPUApp = topGPUApp
-        self.memoryPressure = memoryPressure
         self.swapUsedBytes = swapUsedBytes
         self.sampledAt = sampledAt
     }
@@ -176,7 +172,6 @@ private final class SystemStatsSampler: @unchecked Sendable {
             memoryPercent: smooth(readMemoryPercent(), &smoothedMemory),
             temperatureCelsius: smooth(temperatures.readAverageCPU(), &smoothedTemperature),
             topGPUApp: topGPUApp,
-            memoryPressure: readMemoryPressure(),
             swapUsedBytes: readSwapUsedBytes(),
             sampledAt: Date()
         )
@@ -267,13 +262,6 @@ private final class SystemStatsSampler: @unchecked Sendable {
         guard busy.total >= previousGPU.busy else { return lastGPUPercent }
         lastGPUPercent = 100 * Double(busy.total - previousGPU.busy) / elapsed
         return lastGPUPercent
-    }
-
-    private func readMemoryPressure() -> Int? {
-        var level: Int32 = 0
-        var size = MemoryLayout<Int32>.size
-        guard sysctlbyname("kern.memorystatus_vm_pressure_level", &level, &size, nil, 0) == 0 else { return nil }
-        return Int(level)
     }
 
     private func readSwapUsedBytes() -> UInt64? {

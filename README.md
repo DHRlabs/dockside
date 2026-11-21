@@ -39,11 +39,12 @@ It is a native macOS app. No menu bar icon, no Dock icon, no windows to manage.
 - Hides and shows with the Dock, including in full-screen apps.
 - Three themes: **Glass**, **Pixel**, and **Rounded Ticks**. Right-click the bubble or strip and choose **Theme**.
 - A compact layout kicks in automatically when the room beside the Dock gets tight.
-- When CPU, GPU, or RAM stays pinned at 100% for 15 seconds, a light sweeps its meter while the whole arc
+- When CPU or GPU stays pinned at 100% for 15 seconds, a light sweeps its meter while the whole arc
   heats from its own color through yellow and orange to red over 3 minutes, sweeping faster the longer it stays pinned.
   It stops the moment the meter drops off pinned.
-  RAM never shows 100% (file cache fills the rest), so it counts as pinned while macOS memory pressure is
-  at warning or critical.
+- RAM rarely reads past 85% (macOS compresses and swaps first), so the RAM arc past 85% shows swap: while
+  memory is swapped out it lights up, yellow with a little swap through orange to red once swap equals the
+  installed RAM.
 - Hover CPU, GPU, or RAM to see which app is using the most of it; the RAM card also shows swap used.
 - Respects light and dark appearance and Reduce Transparency.
 - Opens at login. Right-click to turn that off or quit.
