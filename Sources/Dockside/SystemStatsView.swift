@@ -9,6 +9,9 @@ final class SystemStatsView: NSView {
     private var lastCometFrame: TimeInterval?
     // Each pinned meter, keyed by its label: when it became pinned and how far its comet has swept.
     private var overloads: [String: (pinnedSince: TimeInterval, phase: Double)] = [:]
+    // Swap in use over installed RAM, capped at 1; nil while nothing is swapped out.
+    private var swapHeat: Double?
+    private var swapPhase = 0.0
     private let hoverPanel = MeterHoverPanel()
     private var hoveredMeter: String?
     private var hoverTimer: Timer?
@@ -34,6 +37,13 @@ final class SystemStatsView: NSView {
     ]
     // How far toward white the light riding the arc is, so it reads as a hot spot on any arc color.
     private static let lightWhiteness: CGFloat = 0.7
+    // RAM never reads much past 85% (macOS compresses and swaps instead of giving up its file cache), so the
+    // RAM arc past this point is the swap zone. While memory is swapped out it lights up, colored by how
+    // much: yellow with a little swap, through orange, to red once swap equals the installed RAM.
+    private static let swapZoneStart = 0.85
+    private static let swapGradient = NSGradient(colors: heatColors)
+    // A steady glow on the swap zone, so it reads as lit even when its color is close to RAM's own orange.
+    private static let swapGlow: CGFloat = 0.6
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -66,11 +76,9 @@ final class SystemStatsView: NSView {
     func update(_ reading: SystemStatsReading) {
         self.reading = reading
         let now = ProcessInfo.processInfo.systemUptime
-        // RAM never shows 100% (file cache fills the rest), so it counts as pinned while macOS reports
-        // memory pressure at warning or critical instead.
-        let ramPinned = (reading.memoryPressure ?? 0) >= 2
-        for (label, pinned) in [("CPU", Self.isPinned(reading.cpuPercent)), ("GPU", Self.isPinned(reading.gpuPercent)),
-                                ("RAM", ramPinned)] {
+        let installed = Double(ProcessInfo.processInfo.physicalMemory)
+        swapHeat = reading.swapUsedBytes.flatMap { $0 > 0 && installed > 0 ? min(1, Double($0) / installed) : nil }
+        for (label, pinned) in [("CPU", Self.isPinned(reading.cpuPercent)), ("GPU", Self.isPinned(reading.gpuPercent))] {
             if !pinned {
                 overloads[label] = nil
             } else if overloads[label] == nil {
@@ -101,9 +109,10 @@ final class SystemStatsView: NSView {
         return min(1, (pinnedFor - Self.engageAfter) / Self.fullHeatAfter)
     }
 
-    // Ticks about 30 times a second only while a meter is pinned and the view is in a window.
+    // Ticks about 30 times a second only while a meter is pinned or memory is swapped out, and the view
+    // is in a window.
     private func updateCometTimer() {
-        if !overloads.isEmpty, window != nil {
+        if !overloads.isEmpty || swapHeat != nil, window != nil {
             guard cometTimer == nil else { return }
             let timer = Timer(timeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.advanceComets() }
@@ -129,6 +138,10 @@ final class SystemStatsView: NSView {
             let cycle = Self.coolCycle + (Self.hotCycle - Self.coolCycle) * heat
             overloads[label]?.phase = (overload.phase + elapsed / cycle).truncatingRemainder(dividingBy: 1)
         }
+        if swapHeat != nil {
+            running = true
+            swapPhase = (swapPhase + elapsed / Self.coolCycle).truncatingRemainder(dividingBy: 1)
+        }
         if running, window?.isVisible == true { needsDisplay = true }
     }
 
@@ -144,6 +157,22 @@ final class SystemStatsView: NSView {
         let head = phase < Self.cometSweepShare
             ? -lead + phase / Self.cometSweepShare * (span + trail + lead) : nil
         return (arc, light, head)
+    }
+
+    // The lit swap zone on the RAM arc: its color, its light, and where the light's head sits in zone units
+    // from 0 to `span` (nil between sweeps). nil while nothing is swapped out.
+    private func swapZone(span: Double, trail: Double, lead: Double) -> (color: NSColor, light: NSColor, head: Double?)? {
+        guard let swapHeat else { return nil }
+        let color = Self.swapGradient?.interpolatedColor(atLocation: CGFloat(swapHeat)) ?? Self.heatColors[0]
+        let light = color.blended(withFraction: Self.lightWhiteness, of: .white) ?? .white
+        let head = swapPhase < Self.cometSweepShare
+            ? -lead + swapPhase / Self.cometSweepShare * (span + trail + lead) : nil
+        return (color, light, head)
+    }
+
+    // The first dash of a meter that sits past the start of the swap zone.
+    private static func firstSwapDash(count: Int) -> Int {
+        (0..<count).first { Double($0) / Double(count - 1) > swapZoneStart } ?? count
     }
 
     // Full brightness at the head, over half a dash ahead of it, and a tail that drops off quickly
@@ -320,6 +349,8 @@ final class SystemStatsView: NSView {
             let tickRadius = (outerWidth - tickWidth) / 2
             let tickLength = outerWidth * 0.10
             let comet = comet(label, accent: accent, span: 13, trail: Self.cometTrail, lead: 0.5)
+            let swapFirst = Self.firstSwapDash(count: 13)
+            let swap = label == "RAM" ? swapZone(span: Double(13 - swapFirst), trail: Self.cometTrail, lead: 0.5) : nil
             for index in 0..<13 {
                 let angle = Double.pi - Double.pi * Double(index) / 12
                 let outer = NSPoint(x: center.x + CGFloat(cos(angle)) * tickRadius,
@@ -332,11 +363,13 @@ final class SystemStatsView: NSView {
                 tick.lineCapStyle = .round
                 tick.move(to: inner)
                 tick.line(to: outer)
-                let intensity = cometIntensity(index: index, head: comet?.head)
-                let color = cometBlend(index < filled ? comet?.arc ?? accent : trackColor(dark: dark),
-                                       toward: comet?.light, intensity: intensity)
+                let zone = index >= swapFirst ? swap : nil
+                let intensity = zone.map { cometIntensity(index: index - swapFirst, head: $0.head) }
+                    ?? cometIntensity(index: index, head: comet?.head)
+                let base = zone?.color ?? (index < filled ? comet?.arc ?? accent : trackColor(dark: dark))
+                let color = cometBlend(base, toward: zone?.light ?? comet?.light, intensity: intensity)
                 color.setStroke()
-                withCometGlow(intensity, color: color) { tick.stroke() }
+                withCometGlow(zone == nil ? intensity : max(Self.swapGlow, intensity), color: color) { tick.stroke() }
             }
         } else if let value, value.isFinite {
             strokeGlassSemicircle(center: center, radius: radius, width: stroke,
@@ -350,6 +383,17 @@ final class SystemStatsView: NSView {
             if let comet, let head = comet.head {
                 strokeGlassComet(center: center, radius: radius, width: stroke,
                                  head: head, tail: 0.3, color: comet.light)
+            }
+            let zoneSpan = 1 - Self.swapZoneStart
+            if label == "RAM", let zone = swapZone(span: zoneSpan, trail: 0.1, lead: 0.01) {
+                withCometGlow(Self.swapGlow, color: zone.color) {
+                    strokeGlassArc(center: center, radius: radius, width: stroke,
+                                   from: Self.swapZoneStart, to: 1, color: zone.color)
+                }
+                if let head = zone.head {
+                    strokeGlassComet(center: center, radius: radius, width: stroke, head: Self.swapZoneStart + head,
+                                     tail: 0.1, color: zone.light, floor: Self.swapZoneStart)
+                }
             }
         } else {
             strokeGlassSemicircle(center: center, radius: radius, width: stroke,
@@ -434,12 +478,27 @@ final class SystemStatsView: NSView {
         path.stroke()
     }
 
-    // A short heat-colored streak riding the arc, brightest at the head and fading back along its tail.
+    private func strokeGlassArc(center: NSPoint, radius: CGFloat, width: CGFloat, from: Double, to: Double,
+                                color: NSColor) {
+        let startAngle = 180 - CGFloat(180 * from)
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: center.x + radius * cos(startAngle * .pi / 180),
+                              y: center.y + radius * sin(startAngle * .pi / 180)))
+        path.appendArc(withCenter: center, radius: radius, startAngle: startAngle,
+                       endAngle: 180 - CGFloat(180 * to), clockwise: true)
+        path.lineWidth = width
+        path.lineCapStyle = .round
+        color.setStroke()
+        path.stroke()
+    }
+
+    // A short heat-colored streak riding the arc, brightest at the head and fading back along its tail,
+    // never drawn below `floor`.
     private func strokeGlassComet(center: NSPoint, radius: CGFloat, width: CGFloat, head: Double, tail: Double,
-                                  color: NSColor) {
+                                  color: NSColor, floor: Double = 0) {
         let slices = 8
         for slice in 0..<slices {
-            let from = max(0, head - tail * Double(slices - slice) / Double(slices))
+            let from = max(floor, head - tail * Double(slices - slice) / Double(slices))
             let to = min(1, head - tail * Double(slices - slice - 1) / Double(slices))
             guard to > from else { continue }
             let intensity = CGFloat(slice + 1) / CGFloat(slices)
@@ -513,8 +572,12 @@ final class SystemStatsView: NSView {
         let count = max(8, Int(ceil(Double.pi * Double(radius) / Double(side + gap))))
         let filled = Int((fraction * Double(count)).rounded(.down))
         let comet = comet(label, accent: color, span: Double(count), trail: Self.cometTrail, lead: 0.5)
+        let swapFirst = Self.firstSwapDash(count: count)
+        let swap = label == "RAM" ? swapZone(span: Double(count - swapFirst), trail: Self.cometTrail, lead: 0.5) : nil
         for index in 0..<count {
-            let intensity = cometIntensity(index: index, head: comet?.head)
+            let zone = index >= swapFirst ? swap : nil
+            let intensity = zone.map { cometIntensity(index: index - swapFirst, head: $0.head) }
+                ?? cometIntensity(index: index, head: comet?.head)
             let angle = Double.pi - Double.pi * Double(index) / Double(count - 1)
             for row in 0..<2 {
                 let rowRadius = radius - CGFloat(row) * (side + gap)
@@ -522,8 +585,8 @@ final class SystemStatsView: NSView {
                                     y: baseline.y + CGFloat(sin(angle)) * rowRadius)
                 let block = NSRect(x: point.x - side / 2, y: point.y - side / 2,
                                    width: side, height: side)
-                cometBlend(index < filled ? comet?.arc ?? color : trackColor(dark: dark),
-                           toward: comet?.light, intensity: intensity).setFill()
+                cometBlend(zone?.color ?? (index < filled ? comet?.arc ?? color : trackColor(dark: dark)),
+                           toward: zone?.light ?? comet?.light, intensity: intensity).setFill()
                 block.fill()
             }
         }
